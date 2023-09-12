@@ -54,13 +54,12 @@ def main():
 
     # get elevation difference between IS2 and reference DEM
     is2_dh = IS2_DEM_difference(masked_dem, is2_subset, "scheelebreen")
-    print(is2_dh)
 
-    # plot elevation differences !!! functions need improvement (choose which variable to plot)
+    # plot elevation differences
     #is2_dh = xr.open_dataset("cache/scheelebreen-is2-dh.nc")
     #plot_pts(is2_dh, "dh")
 
-    hypsometric_binning("cache/scheelebreen-is2-dh.nc")
+    binned = hypsometric_binning("cache/scheelebreen-is2-dh.nc")
 
 def subset_is2(is2_data, bounds, label):
     """
@@ -116,9 +115,9 @@ def plot_pts(data, var):
         which variable to plot (name of variable as string)
     """
 
-    plt.scatter(data.easting, data.northing, c=data[var])
-    plt.gca().set_aspect('equal')
-    plt.show()
+    #plt.scatter(data.easting, data.northing, c=data[var])
+    #plt.gca().set_aspect('equal')
+    #plt.show()
 
 def load_shp(glacier_name):
     """
@@ -212,7 +211,7 @@ def mask_dem(dem, gao):
 
     # rasterize the shapefile to fit the DEM
     gao_rasterized = gu.Vector(gao).create_mask(dem)
-    gao_rasterized.show(cmap="Purples")
+    #gao_rasterized.show(cmap="Purples")
     #plt.show()
 
     # extract values inside the glacier area outlines
@@ -249,7 +248,7 @@ def IS2_DEM_difference(dem, is2, label):
 
     # if subset already exists open dataset
     if cache_path.is_file():
-        return xr.open_dataset(cache_path)
+       return xr.open_dataset(cache_path)
 
     # assign DEM elevation as a variable to the IS2 data
     is2["dem_elevation"] = "index", dem.value_at_coords(is2.easting, is2.northing)
@@ -264,17 +263,41 @@ def IS2_DEM_difference(dem, is2, label):
 
 def hypsometric_binning(data_path):
     """
-    hypsometric binning
+    Hypsometric binning of DEM.
 
+    Apart from doing the hypsometric binning, this function also creates a scatter plot of
+    elevation differences, and results of the hypsometric binning. Maybe I should think about
+    moving this to a different function.
+
+    Parameters
+    ----------
+    - data-path
+        path to IS2 dataset containing dh and dem_elevation variables
+
+    Results
+    -------
+    Pandas dataframe of elevation bins.
     """
 
     # open dataset with xarray
     data = xr.open_dataset(data_path) # ICESat-2 data
 
-    # hypsometric binning (ddem = elevation change, ref_dem = elevation from IS2)
-    binned = xdem.volume.hypsometric_binning(ddem=data["dh"], ref_dem=data["dem_elevation"], bins=10)
+    # replace no data values with nan
+    data = data.where(data.dem_elevation < 2000)
 
-    return binned
+    # plot elevation differences, size and color based on amount of difference
+    scatter = plt.scatter(data.easting, data.northing, s=data.dh.where(data.dh>-20), c=data.dh, cmap="seismic")
+    plt.legend(*scatter.legend_elements(), loc="lower left", title="Classes")
+    plt.show()
+
+    # hypsometric binning (ddem = elevation change, ref_dem = elevation from DEM)
+    hypso = xdem.volume.hypsometric_binning(ddem=data["dh"], ref_dem=data["dem_elevation"], kind="quantile", bins=10)
+
+    # plot binned data
+    plt.plot(hypso["value"], hypso.index.mid)
+    plt.show()
+
+    return hypso
 
 if __name__ == "__main__":
     main()
