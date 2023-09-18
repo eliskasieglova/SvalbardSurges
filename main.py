@@ -15,6 +15,7 @@ import variete.vrt.vrt
 import rasterio as rio
 import geoutils as gu
 import geopandas as gpd
+import datetime
 
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
@@ -40,14 +41,15 @@ def main():
     # subset IS2 data by bounds
     is2_subset = subset_is2(data, bounds, "scheelebreen")
 
-    # plot the cropped IS2 data
-    #plot_pts(is2_subset, "h_te_best_fit")
-
     # load DEM cropped to bounds
     dem_subset = load_dem(bounds, "scheelebreen")
 
+    # visualiza DEM
+    #dem.show()
+    #plt.show()
+
     # load shapefile
-    scheelebreen_shp = load_shp("Scheelebreen")
+    scheelebreen_shp = load_shp(13406.1)
 
     # clip DEM to glacier area outlines
     masked_dem = mask_dem(dem_subset, scheelebreen_shp)
@@ -59,7 +61,8 @@ def main():
     #is2_dh = xr.open_dataset("cache/scheelebreen-is2-dh.nc")
     #plot_pts(is2_dh, "dh")
 
-    binned = hypsometric_binning("cache/scheelebreen-is2-dh.nc")
+    # hypsometric binning
+    binned = hypsometric_binning(is2_dh)
 
 def subset_is2(is2_data, bounds, label):
     """
@@ -115,11 +118,11 @@ def plot_pts(data, var):
         which variable to plot (name of variable as string)
     """
 
-    #plt.scatter(data.easting, data.northing, c=data[var])
-    #plt.gca().set_aspect('equal')
-    #plt.show()
+    plt.scatter(data.easting, data.northing, c=data[var])
+    plt.gca().set_aspect('equal')
+    plt.show()
 
-def load_shp(glacier_name):
+def load_shp(glacier_ident):
     """
     Loads a single glacier as shapefile from the GAO dataset.
 
@@ -141,10 +144,8 @@ def load_shp(glacier_name):
     # load shapefile converted to EPSG:32633
     gao = gpd.read_file(file_path).to_crs(32633)
 
-    # filter by glacier name
-    gao_glacier = gao.query(f"NAME=='{glacier_name}'")
-
-    # if there's more glaciers with the same name select the largest one (??)
+    # filter by glacier IDENT
+    gao_glacier = gao.query(f"IDENT=={glacier_ident}")
 
     return gao_glacier
 
@@ -165,7 +166,6 @@ def load_dem(bounds, label):
     -------
     A subset of the DEM within the given bounds.
     """
-    # loads DEM
 
     # paths
     file_name = Path("S0_DTM5_2011_25163_33.tif")
@@ -186,10 +186,6 @@ def load_dem(bounds, label):
     # create DEM object
     dem = xdem.DEM(vrt_cropped_filepath, load_data=False)
 
-    # plot DEM
-    #dem.show()
-    #plt.show()
-
     return dem
 
 def mask_dem(dem, gao):
@@ -207,20 +203,13 @@ def mask_dem(dem, gao):
     -------
     Masked DEM containing values only within the glacier area outlines.
     """
-    # run before sampling raster
 
     # rasterize the shapefile to fit the DEM
     gao_rasterized = gu.Vector(gao).create_mask(dem)
-    #gao_rasterized.show(cmap="Purples")
-    #plt.show()
 
     # extract values inside the glacier area outlines
     dem.load()
     dem.set_mask(~gao_rasterized)
-
-    # visualization
-    #dem.show(cmap="Purples")
-    #plt.show()
 
     return dem
 
@@ -261,40 +250,61 @@ def IS2_DEM_difference(dem, is2, label):
 
     return is2
 
-def hypsometric_binning(data_path):
+def hypsometric_binning(data):
     """
-    Hypsometric binning of DEM.
-
-    Apart from doing the hypsometric binning, this function also creates a scatter plot of
-    elevation differences, and results of the hypsometric binning. Maybe I should think about
-    moving this to a different function.
+    Hypsometric binning of glacier elevation changes.
 
     Parameters
     ----------
-    - data-path
-        path to IS2 dataset containing dh and dem_elevation variables
+    - data
+        IS2 dataset containing the variables 'dh' and 'dem_elevation'
 
     Results
     -------
-    Pandas dataframe of elevation bins.
+    Pandas dataframe of elevation bins, plot of hypsometric elevation change for each year in dataset.
     """
 
-    # open dataset with xarray
-    data = xr.open_dataset(data_path) # ICESat-2 data
-
-    # replace no data values with nan
+    # replace no data values (large number) with Nan and drop these
     data = data.where(data.dem_elevation < 2000)
+    data = data.dropna(dim='index')
 
-    # plot elevation differences, size and color based on amount of difference
-    scatter = plt.scatter(data.easting, data.northing, s=data.dh.where(data.dh>-20), c=data.dh, cmap="seismic")
-    plt.legend(*scatter.legend_elements(), loc="lower left", title="Classes")
-    plt.show()
+    # empty dictionary to append binned elevation differences by year
+    hypso_bins = { }
 
-    # hypsometric binning (ddem = elevation change, ref_dem = elevation from DEM)
-    hypso = xdem.volume.hypsometric_binning(ddem=data["dh"], ref_dem=data["dem_elevation"], kind="quantile", bins=10)
+    for year, data_subset in data.groupby(data["date"].dt.year):
+        bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 11))
 
-    # plot binned data
-    plt.plot(hypso["value"], hypso.index.mid)
+        # correct elevation and add it to dataset todo: better conversion
+        data_subset['dh_corr'] = data_subset['dh'] + 31.55
+        data[year] = data_subset['dh_corr']
+
+        #
+        hypso = xdem.volume.hypsometric_binning(ddem=data_subset["dh_corr"], ref_dem=data_subset["dem_elevation"], kind="custom", bins=bins)
+        hypso_bins[year] = hypso
+
+    # scatterplot of available data points that we have
+    #scatter = plt.scatter(data.easting, data.northing, c=data["date"].dt.year, cmap='hsv', s=0.5)
+    #plt.title(year)
+    #legend1 = plt.legend(*scatter.legend_elements(), loc="upper left", title="Classes")
+    #plt.show()
+
+    # initialize subplots and n value for visualization
+    plt.subplots(2, 2, sharey=True, sharex=True)
+    plt.tight_layout()
+    n=1
+
+    # convert cumulative values to absolute and visualize the hypsometric analysis
+    for year in hypso_bins:
+        if year != 2022:
+            hypso_bins[year]['abs'] = hypso_bins[year].value - hypso_bins[year+1].value
+
+            # plot hypsometric curves
+            plt.subplot(2, 2, n)
+            plt.title(year)
+            plt.plot(hypso_bins[year]['abs'], hypso_bins[year].index.mid)
+
+            n=n+1
+
     plt.show()
 
     return hypso
