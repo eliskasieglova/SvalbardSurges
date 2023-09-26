@@ -4,25 +4,12 @@ import os
 from pathlib import Path
 import requests
 
-def download():
+def download(url, name):
 
     # cache path
     cache_path = Path("cache/")
 
-    # labels for downloaded data
-    dem_label = Path('dem.tif')
-    gao_label = Path('is2.nc')
-
-    # download URLs
-    dem_name = 'NP_S0_DTM5_2011_25163_33' # region of Scheelebreen
-    dem_url = f'https://public.data.npolar.no/kartdata/S0_Terrengmodell/Delmodell/{dem_name}.zip'
-    gao_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/3df9512e5a73841b1a23c38cf4e815e3'
-
-    dem = download_file(dem_url, dem_label)
-    gao = download_file(gao_url, gao_label)
-
-    print(dem)
-    print(gao)
+    file = download_file(url, name)
 
 def download_file(url: str, filename: str | None = None, directory: Path | str | None = None) -> Path:
     """
@@ -72,6 +59,4 @@ def download_file(url: str, filename: str | None = None, directory: Path | str |
                 shutil.move(temp_path, out_path)
 
     return out_path
-
-download()
 
