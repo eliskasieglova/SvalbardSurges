@@ -1,8 +1,9 @@
 from pathlib import Path
 import geopandas as gpd
+import svalbardsurges.paths as paths
 
 
-def load_shp(glacier_ident):
+def load_shp(glacier_id):
     """
     Loads a single glacier as shapefile from the GAO dataset.
 
@@ -16,15 +17,11 @@ def load_shp(glacier_ident):
     Returns .shp of the outline of selected glacier.
     """
 
-    # paths
-    file_name = Path("GAO_SfM_1936_1938_v3.shp")
-    dir_name = Path("C:/Users/eliss/SvalbardSurges/GAO")
-    file_path = dir_name/file_name
-
-    # load shapefile converted to EPSG:32633
+    # load shapefile of glacier area outlines converted to EPSG:32633
+    file_path = Path(f'cache/gao.zip')
     gao = gpd.read_file(file_path).to_crs(32633)
 
-    # filter by glacier IDENT
-    gao_glacier = gao.query(f"IDENT=={glacier_ident}")
+    # subset by chosen glacier ID
+    glacier_outline = gao.query(f"IDENT=={glacier_id}")
 
-    return gao_glacier
+    return glacier_outline

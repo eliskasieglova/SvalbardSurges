@@ -12,40 +12,57 @@ import svalbardsurges.utilities
 import svalbardsurges.inputs.is2
 import svalbardsurges.inputs.dems
 import svalbardsurges.inputs.shp
+import svalbardsurges.download_file
+import svalbardsurges.paths
 
 def main():
 
     # open IS2 data
-    data = xr.open_dataset("nordenskiold_land-is2.nc")
+    is2 = xr.open_dataset(svalbardsurges.paths.is2_filename)
 
-    # set bounds for subsetting data
-    bounds = {
-        "bottom": 8617861,
-        "right": 552643,
-        "top": 8637186,
-        "left": 540154
-    }
+    # download DEM and glacier area outlines
+    dem = svalbardsurges.download_file.download(svalbardsurges.paths.dem_url, 'dem.zip')
+    gao = svalbardsurges.download_file.download(svalbardsurges.paths.gao_url, 'gao.zip')
 
-    # subset IS2 data by bounds
-    is2_subset = svalbardsurges.analysis.subset_is2(data, bounds, "scheelebreen")
+    # list of glacier ids
+    glacier_ids = [13406.1,
+                   13499.02,
+                   13410,
+                   13413.1,
+                   13218.2,
+                   13408.1,
+                   13412
+                ]
 
-    # load DEM cropped to bounds
-    dem_subset = svalbardsurges.inputs.dems.load_dem(bounds, "scheelebreen")
+    for glacier_id in glacier_ids:
 
-    # load shapefile
-    scheelebreen_shp = svalbardsurges.inputs.shp.load_shp(13406.1)
+        label = str(glacier_id)
 
-    # clip DEM to glacier area outlines
-    masked_dem = svalbardsurges.inputs.dems.mask_dem(dem_subset, scheelebreen_shp)
+        # load single glacier outline based on glacier ID
+        glacier_outline = svalbardsurges.inputs.shp.load_shp(glacier_id)
 
-    # get elevation difference between IS2 and reference DEM
-    is2_dh = svalbardsurges.analysis.IS2_DEM_difference(masked_dem, is2_subset, "scheelebreen")
+        # set bounds according to glacier outline
+        bounds = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
-    # hypsometric binning
-    hypso = svalbardsurges.analysis.hypsometric_binning(is2_dh)
+        # subset DEM and IS2 data by chosen bounds
+        dem_subset = svalbardsurges.inputs.dems.load_dem(bounds, label)
+        is2_subset = svalbardsurges.analysis.subset_is2(is2, bounds, label)
 
-    # plot hypsometric curves
-    svalbardsurges.plotting.plot_hypso_curves(hypso)
+        # clip DEM to glacier area outline
+        masked_dem = svalbardsurges.inputs.dems.mask_dem(dem_subset, glacier_outline)
+
+        # get elevation difference between IS2 and reference DEM
+        is2_dh = svalbardsurges.analysis.IS2_DEM_difference(masked_dem, is2_subset, label)
+
+        # do hypsometric binning of glacier
+        #hypso = svalbardsurges.analysis.hypsometric_binning(is2_dh)
+
+        # compute statistics
+        #stat = svalbardsurges.analysis.statistics(is2_dh)
+
+        # plot hypsometric curves
+        svalbardsurges.plotting.plot_hypso_curves(is2_dh, label)
+        print(f'Glacier {label} without errors.')
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,9 @@ import rasterio as rio
 import variete
 import variete.vrt.vrt
 import warnings
+import svalbardsurges.paths as paths
+from matplotlib import pyplot as plt
+from zipfile import ZipFile
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
@@ -22,7 +25,7 @@ def load_dem(bounds, label):
     - bounds
         the bounding box to use (requires the keys "left", "right", "bottom", "top")
     - label
-        a label to assign when caching the result
+        a label to assign when caching the result (name of glacier)
 
     Returns
     -------
@@ -30,20 +33,24 @@ def load_dem(bounds, label):
     """
 
     # paths
-    file_name = Path("S0_DTM5_2011_25163_33.tif")
-    dir_name = Path("C:/Users/eliss/SvalbardSurges/DEMs")
-    file_path = dir_name/("NP_"+file_name.stem)/file_name
-    vrt_warped_filepath = Path(f"cache/{file_name.stem}_{label}_warped.vrt")
-    vrt_cropped_filepath = Path(f"cache/{file_name.stem}_{label}_cropped.vrt")
+    file_path = Path(f'cache/{paths.dem_filename}')
+    vrt_warped_filepath = Path(f"cache/{file_path.stem}_{label}_warped.vrt")
+    vrt_cropped_filepath = Path(f"cache/{file_path.stem}_{label}_cropped.vrt")
 
-    # convert bounds (dict) to bounding box (list)
-    bbox = rio.coords.BoundingBox(**bounds)
+    # extract zipped file
+    with ZipFile('cache/dem.zip') as zObject:
+        zObject.extractall(Path('cache/'))
 
-    # warp vrt (virtual raster), dst coord system EPSG:32633 (WGS-84)
-    variete.vrt.vrt.vrt_warp(vrt_warped_filepath, file_path, dst_crs=32633)
+    # if subset does not exist create vrt
+    if vrt_cropped_filepath.is_file() == False:
+        # convert bounds (dict) to bounding box (list)
+        bbox = rio.coords.BoundingBox(**bounds)
 
-    # crop warped vrt to bbox
-    variete.vrt.vrt.build_vrt(vrt_cropped_filepath, vrt_warped_filepath, output_bounds=bbox)
+        # warp vrt (virtual raster), dst coord system EPSG:32633 (WGS-84)
+        variete.vrt.vrt.vrt_warp(vrt_warped_filepath, file_path, dst_crs=32633)
+
+        # crop warped vrt to bbox
+        variete.vrt.vrt.build_vrt(vrt_cropped_filepath, vrt_warped_filepath, output_bounds=bbox)
 
     # create DEM object
     dem = xdem.DEM(vrt_cropped_filepath, load_data=False)
@@ -72,5 +79,9 @@ def mask_dem(dem, gao):
     # extract values inside the glacier area outlines
     dem.load()
     dem.set_mask(~gao_rasterized)
+
+    # visualise result
+    #dem.show()
+    #plt.show()
 
     return dem
