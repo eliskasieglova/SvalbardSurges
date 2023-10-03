@@ -5,7 +5,6 @@ import variete
 import variete.vrt.vrt
 import warnings
 import svalbardsurges.paths as paths
-from matplotlib import pyplot as plt
 from zipfile import ZipFile
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
@@ -33,16 +32,16 @@ def load_dem(bounds, label):
     """
 
     # paths
-    file_path = Path(f'cache/{paths.dem_filename}')
+    file_path = Path('cache/NP_S0_DTM5_2011_25163_33/S0_DTM5_2011_25163_33.tif')
     vrt_warped_filepath = Path(f"cache/{file_path.stem}_{label}_warped.vrt")
     vrt_cropped_filepath = Path(f"cache/{file_path.stem}_{label}_cropped.vrt")
 
-    # extract zipped file
-    with ZipFile('cache/dem.zip') as zObject:
-        zObject.extractall(Path('cache/'))
-
     # if subset does not exist create vrt
-    if vrt_cropped_filepath.is_file() == False:
+    if not vrt_cropped_filepath.is_file():
+        # extract zipped file
+        with ZipFile('cache/dem.zip') as zObject:
+            zObject.extractall(Path('cache/'))
+
         # convert bounds (dict) to bounding box (list)
         bbox = rio.coords.BoundingBox(**bounds)
 
@@ -52,12 +51,9 @@ def load_dem(bounds, label):
         # crop warped vrt to bbox
         variete.vrt.vrt.build_vrt(vrt_cropped_filepath, vrt_warped_filepath, output_bounds=bbox)
 
-    # create DEM object
-    dem = xdem.DEM(vrt_cropped_filepath, load_data=False)
+    return vrt_cropped_filepath
 
-    return dem
-
-def mask_dem(dem, gao):
+def mask_dem(dem_path, gao, label) -> Path:
     """
     Masks DEM data by the glacier area outlines.
 
@@ -73,6 +69,13 @@ def mask_dem(dem, gao):
     Masked DEM containing values only within the glacier area outlines.
     """
 
+    path = Path(f'cache/{paths.dem_filename}')
+
+    #if path.is_file():
+     #   return path
+
+    dem = xdem.DEM(str(dem_path), load_data=False)
+
     # rasterize the shapefile to fit the DEM
     gao_rasterized = gu.Vector(gao).create_mask(dem)
 
@@ -80,8 +83,6 @@ def mask_dem(dem, gao):
     dem.load()
     dem.set_mask(~gao_rasterized)
 
-    # visualise result
-    #dem.show()
-    #plt.show()
+    dem.save(str(path))
 
-    return dem
+    return path

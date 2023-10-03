@@ -9,3 +9,4 @@ gao_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_f
 # file names of working data
 is2_filename = 'nordenskiold_land-is2.nc' # todo: download url
 dem_filename = 'NP_S0_DTM5_2011_25163_33/S0_DTM5_2011_25163_33.tif'
+

@@ -14,6 +14,7 @@ import svalbardsurges.inputs.dems
 import svalbardsurges.inputs.shp
 import svalbardsurges.download_file
 import svalbardsurges.paths
+import svalbardsurges.build_dem
 
 def main():
 
@@ -21,11 +22,12 @@ def main():
     is2 = xr.open_dataset(svalbardsurges.paths.is2_filename)
 
     # download DEM and glacier area outlines
-    dem = svalbardsurges.download_file.download(svalbardsurges.paths.dem_url, 'dem.zip')
-    gao = svalbardsurges.download_file.download(svalbardsurges.paths.gao_url, 'gao.zip')
+    dem = svalbardsurges.download_file.download_file(svalbardsurges.paths.dem_url, 'dem.zip')
+    gao = svalbardsurges.download_file.download_file(svalbardsurges.paths.gao_url, 'gao.zip')
 
     # list of glacier ids
-    glacier_ids = [13406.1,
+    glacier_ids = [13218.1,
+                   13406.1,
                    13499.02,
                    13410,
                    13413.1,
@@ -43,13 +45,14 @@ def main():
 
         # set bounds according to glacier outline
         bounds = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
+        svalbardsurges.build_dem.build_npi_mosaic(verbose=True)
 
         # subset DEM and IS2 data by chosen bounds
-        dem_subset = svalbardsurges.inputs.dems.load_dem(bounds, label)
+        #dem_subset_path = svalbardsurges.inputs.dems.load_dem(bounds, label)
         is2_subset = svalbardsurges.analysis.subset_is2(is2, bounds, label)
 
         # clip DEM to glacier area outline
-        masked_dem = svalbardsurges.inputs.dems.mask_dem(dem_subset, glacier_outline)
+        masked_dem = svalbardsurges.inputs.dems.mask_dem('cache/npi_vrts/npi_mosaic.vrt', glacier_outline, label)
 
         # get elevation difference between IS2 and reference DEM
         is2_dh = svalbardsurges.analysis.IS2_DEM_difference(masked_dem, is2_subset, label)
@@ -61,7 +64,10 @@ def main():
         #stat = svalbardsurges.analysis.statistics(is2_dh)
 
         # plot hypsometric curves
-        svalbardsurges.plotting.plot_hypso_curves(is2_dh, label)
+        svalbardsurges.plotting.plot_hypso_curves(is2_dh, label, glacier_outline)
+        svalbardsurges.plotting.plot_yearly_dh(is2_dh, label, glacier_outline)
+
+
         print(f'Glacier {label} without errors.')
 
 if __name__ == "__main__":

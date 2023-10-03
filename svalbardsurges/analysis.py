@@ -4,6 +4,7 @@ import numpy as np
 import warnings
 from statistics import stdev
 from matplotlib import pyplot as plt
+import rasterio as rio
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
@@ -49,7 +50,7 @@ def subset_is2(is2_data, bounds, label):
 
     return subset
 
-def IS2_DEM_difference(dem, is2, label):
+def IS2_DEM_difference(dem_path, is2, label):
     """
     Get elevation difference between ICESat-2 data and reference DEM.
 
@@ -77,8 +78,19 @@ def IS2_DEM_difference(dem, is2, label):
 
     #svalbardsurges.plotting.plot_pts(is2, 'h_te_best_fit')
 
+    with rio.open(dem_path) as raster, warnings.catch_warnings():
+        warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
+        is2["dem_elevation"] = "index", np.fromiter(
+            raster.sample(
+                np.transpose([is2.easting.values, is2.northing.values]),
+                masked=True
+            ),
+            dtype=raster.dtypes[0],
+            count=is2.easting.shape[0]
+        )
+
     # assign DEM elevation as a variable to the IS2 data
-    is2["dem_elevation"] = "index", dem.value_at_coords(is2.easting, is2.northing)
+    #is2["dem_elevation"] = "index", dem.value_at_coords(is2.easting, is2.northing)
 
     # subtract IS2 elevation from DEM elevation
     is2["dh"] = is2["dem_elevation"] - is2["h_te_best_fit"]
@@ -109,7 +121,7 @@ def hypsometric_binning(data):
     # empty dictionary to append binned elevation differences by year to
     hypso_bins = { }
     stddev = { }
-    bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 11))
+    bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
 
     for year, data_subset in data.groupby(data["date"].dt.year):
         # correct elevation and add it to dataset todo: better conversion
@@ -122,12 +134,6 @@ def hypsometric_binning(data):
 
         # compute standard deviation
         stddev[year] = np.std(data_subset['dh'])
-
-    # scatterplot of available data points that we have
-    #scatter = plt.scatter(data.easting, data.northing, c=data["date"].dt.year, cmap='hsv', s=0.5)
-    #plt.title(year)
-    #legend1 = plt.legend(*scatter.legend_elements(), loc="upper left", title="Classes")
-    #plt.show()
 
     # convert cumulative values to absolute and visualize the hypsometric analysis
     for year in hypso_bins:

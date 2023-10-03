@@ -4,13 +4,6 @@ import os
 from pathlib import Path
 import requests
 
-def download(url, name):
-
-    # cache path
-    cache_path = Path("cache/")
-
-    file = download_file(url, name)
-
 def download_file(url: str, filename: str | None = None, directory: Path | str | None = None) -> Path:
     """
     Download a file from the requested URL.
