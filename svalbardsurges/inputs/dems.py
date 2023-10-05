@@ -6,6 +6,7 @@ import variete.vrt.vrt
 import warnings
 import svalbardsurges.paths as paths
 from zipfile import ZipFile
+from matplotlib import pyplot as plt
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
@@ -32,9 +33,9 @@ def load_dem(bounds, label):
     """
 
     # paths
-    file_path = Path('cache/NP_S0_DTM5_2011_25163_33/S0_DTM5_2011_25163_33.tif')
-    vrt_warped_filepath = Path(f"cache/{file_path.stem}_{label}_warped.vrt")
-    vrt_cropped_filepath = Path(f"cache/{file_path.stem}_{label}_cropped.vrt")
+    file_path = Path('cache/npi_vrts/npi_mosaic.vrt')
+    vrt_warped_filepath = Path(f"cache/{label}_warped.vrt")
+    vrt_cropped_filepath = Path(f"cache/{label}_cropped.vrt")
 
     # if subset does not exist create vrt
     if not vrt_cropped_filepath.is_file():
@@ -44,6 +45,7 @@ def load_dem(bounds, label):
 
         # convert bounds (dict) to bounding box (list)
         bbox = rio.coords.BoundingBox(**bounds)
+        #bbox = list(bounds.values)
 
         # warp vrt (virtual raster), dst coord system EPSG:32633 (WGS-84)
         variete.vrt.vrt.vrt_warp(vrt_warped_filepath, file_path, dst_crs=32633)
@@ -53,7 +55,7 @@ def load_dem(bounds, label):
 
     return vrt_cropped_filepath
 
-def mask_dem(dem_path, gao, label) -> Path:
+def mask_dem(dem_path, gao) -> Path:
     """
     Masks DEM data by the glacier area outlines.
 
@@ -69,20 +71,21 @@ def mask_dem(dem_path, gao, label) -> Path:
     Masked DEM containing values only within the glacier area outlines.
     """
 
-    path = Path(f'cache/{paths.dem_filename}')
+    #path = Path(f'cache/{paths.dem_filename}')
 
-    #if path.is_file():
-     #   return path
-
+    # create DEM from .vrt
     dem = xdem.DEM(str(dem_path), load_data=False)
 
     # rasterize the shapefile to fit the DEM
     gao_rasterized = gu.Vector(gao).create_mask(dem)
+    #gao_rasterized.show(cmap="Purples")
+    #plt.show()
 
     # extract values inside the glacier area outlines
     dem.load()
     dem.set_mask(~gao_rasterized)
 
+    path = Path(f'cache/{gao.NAME.iloc[0]}_masked.tif')
     dem.save(str(path))
 
     return path

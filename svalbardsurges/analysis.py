@@ -5,6 +5,7 @@ import warnings
 from statistics import stdev
 from matplotlib import pyplot as plt
 import rasterio as rio
+import svalbardsurges
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
@@ -76,8 +77,6 @@ def IS2_DEM_difference(dem_path, is2, label):
     if output_name.is_file():
         return xr.open_dataset(output_name)
 
-    #svalbardsurges.plotting.plot_pts(is2, 'h_te_best_fit')
-
     with rio.open(dem_path) as raster, warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
         is2["dem_elevation"] = "index", np.fromiter(
@@ -89,11 +88,10 @@ def IS2_DEM_difference(dem_path, is2, label):
             count=is2.easting.shape[0]
         )
 
-    # assign DEM elevation as a variable to the IS2 data
-    #is2["dem_elevation"] = "index", dem.value_at_coords(is2.easting, is2.northing)
-
     # subtract IS2 elevation from DEM elevation
     is2["dh"] = is2["dem_elevation"] - is2["h_te_best_fit"]
+
+    plt.scatter(is2.easting, is2.northing, c=is2.dh)
 
     # filter out nan
     is2 = is2.where(is2.dem_elevation < 2000)
@@ -126,7 +124,7 @@ def hypsometric_binning(data):
     for year, data_subset in data.groupby(data["date"].dt.year):
         # correct elevation and add it to dataset todo: better conversion
         data_subset['dh_corr'] = data_subset['dh'] + 31.55
-        data[year] = data_subset['dh_corr']
+        #data[year] = data_subset['dh_corr']
 
         # create hypsometric bins
         hypso = xdem.volume.hypsometric_binning(ddem=data_subset["dh_corr"], ref_dem=data_subset["dem_elevation"], kind="custom", bins=bins)

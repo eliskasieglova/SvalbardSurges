@@ -1,6 +1,7 @@
 import xarray as xr
 import socket
 import os
+from pathlib import Path
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -21,13 +22,16 @@ def main():
     # open IS2 data
     is2 = xr.open_dataset(svalbardsurges.paths.is2_filename)
 
+    # build DEM
+    svalbardsurges.build_dem.build_npi_mosaic(verbose=True)
+
     # download DEM and glacier area outlines
     dem = svalbardsurges.download_file.download_file(svalbardsurges.paths.dem_url, 'dem.zip')
     gao = svalbardsurges.download_file.download_file(svalbardsurges.paths.gao_url, 'gao.zip')
 
     # list of glacier ids
-    glacier_ids = [13218.1,
-                   13406.1,
+    glacier_ids = [13406.1,
+                   13218.1,
                    13499.02,
                    13410,
                    13413.1,
@@ -45,14 +49,13 @@ def main():
 
         # set bounds according to glacier outline
         bounds = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
-        svalbardsurges.build_dem.build_npi_mosaic(verbose=True)
 
-        # subset DEM and IS2 data by chosen bounds
-        #dem_subset_path = svalbardsurges.inputs.dems.load_dem(bounds, label)
+        # subset IS2 data by chosen bounds
         is2_subset = svalbardsurges.analysis.subset_is2(is2, bounds, label)
 
-        # clip DEM to glacier area outline
-        masked_dem = svalbardsurges.inputs.dems.mask_dem('cache/npi_vrts/npi_mosaic.vrt', glacier_outline, label)
+        # subset DEM to glacier area outline
+        subset_dem = svalbardsurges.inputs.dems.load_dem(bounds, glacier_outline.NAME.iloc[0])
+        masked_dem = svalbardsurges.inputs.dems.mask_dem(subset_dem, glacier_outline)
 
         # get elevation difference between IS2 and reference DEM
         is2_dh = svalbardsurges.analysis.IS2_DEM_difference(masked_dem, is2_subset, label)
