@@ -2,56 +2,16 @@ import xarray as xr
 from pathlib import Path
 import numpy as np
 import warnings
-from statistics import stdev
 from matplotlib import pyplot as plt
 import rasterio as rio
-import svalbardsurges
 
-# Catch a deprecation warning that arises from skgstat when importing xdem
+# Catch a deprecation warning that arises from skgstat when importing xDEM
 with warnings.catch_warnings():
     import numba
     warnings.simplefilter("ignore", numba.NumbaDeprecationWarning)
     import xdem
 
-def subset_is2(is2_data, bounds, label):
-    """
-    Subset IS2 data using specified bounds.
-
-    The easting and northing variables need to be loaded in memory, so this is a computationally expensive task.
-    The function is cached using the label argument to speed up later calls.
-
-    Parameters
-    ----------
-    - is2_data
-        the ICESat-2 data to subset
-    - bounds
-        bounding box to use (requires the keys: "left", "right", "bottom", "top")
-    - label
-        a label to assign when caching the subset result
-
-    Returns
-    -------
-    A subset IS2 dataset within the given bounds.
-    """
-
-    # path to cached file
-    output_name = Path(f"cache/{label}-is2.nc")
-
-    # if subset already exists open dataset
-    if output_name.is_file():
-        return xr.open_dataset(output_name)
-
-    # subset data based on bounds
-    subset = is2_data.where(
-        (is2_data.easting > bounds["left"]) & (is2_data.easting < bounds["right"]) & (is2_data.northing > bounds["bottom"]) & (
-                    is2_data.northing < bounds["top"]), drop=True)
-
-    output_name.parent.mkdir(exist_ok = True)
-    subset.to_netcdf(output_name)
-
-    return subset
-
-def IS2_DEM_difference(dem_path, is2, label):
+def IS2_DEM_difference(dem_path, is2_path, glacier_outline, output_path):
     """
     Get elevation difference between ICESat-2 data and reference DEM.
 
@@ -61,8 +21,6 @@ def IS2_DEM_difference(dem_path, is2, label):
         reference dem
     - is2
         ICESat-2 dataset
-    - label
-        label to be assigned to the output dataset
 
     Returns
     -------
@@ -70,12 +28,11 @@ def IS2_DEM_difference(dem_path, is2, label):
     and "dh" (difference between IS2 and reference DEM)
     """
 
-    # path to cached file
-    output_name = Path(f"cache/{label}-is2-dh.nc")
-
     # if subset already exists open dataset
-    if output_name.is_file():
-        return xr.open_dataset(output_name)
+    if output_path.is_file():
+        return output_path
+
+    is2 = xr.open_dataset(is2_path)
 
     with rio.open(dem_path) as raster, warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
@@ -88,54 +45,54 @@ def IS2_DEM_difference(dem_path, is2, label):
             count=is2.easting.shape[0]
         )
 
-    # subtract IS2 elevation from DEM elevation
-    is2["dh"] = is2["dem_elevation"] - is2["h_te_best_fit"]
-
-    plt.scatter(is2.easting, is2.northing, c=is2.dh)
-
-    # filter out nan
-    is2 = is2.where(is2.dem_elevation < 2000)
-    is2 = is2.dropna(dim='index')
+    # subtract IS2 elevation from DEM elevation (with elevation correction)
+    is2["dh"] = is2["h_te_best_fit"] - is2["dem_elevation"] - 31.55
 
     # save as netcdf file
-    is2.to_netcdf(output_name)
+    is2.to_netcdf(output_path)
 
-    return is2
+    return output_path
 
-def hypsometric_binning(data):
+def hypsometric_binning(input_path):
     """
     Hypsometric binning of glacier elevation changes.
 
     Parameters
     ----------
-    - data
-        IS2 dataset containing the variables 'dh' and 'dem_elevation'
+    - input_path
+        path to IS2 dataset containing the variables 'dh' and 'dem_elevation'
 
     Results
     -------
     Pandas dataframe of elevation bins, plot of hypsometric elevation change for each year in dataset.
     """
 
-    # empty dictionary to append binned elevation differences by year to
+    # open data
+    data = xr.open_dataset(input_path)
+
+    # empty dictionary to append binned elevation differences by year
     hypso_bins = { }
     stddev = { }
+
+    # count bins
     bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
 
     for year, data_subset in data.groupby(data["date"].dt.year):
-        # correct elevation and add it to dataset todo: better conversion
-        data_subset['dh_corr'] = data_subset['dh'] + 31.55
-        #data[year] = data_subset['dh_corr']
-
         # create hypsometric bins
-        hypso = xdem.volume.hypsometric_binning(ddem=data_subset["dh_corr"], ref_dem=data_subset["dem_elevation"], kind="custom", bins=bins)
-        hypso_bins[year] = hypso
+        hypso_subset = xdem.volume.hypsometric_binning(
+            ddem=data_subset["dh"],
+            ref_dem=data_subset["dem_elevation"],
+            kind="custom",
+            bins=bins,
+            aggregation_function=np.nanmean
+        )
 
-        # compute standard deviation
-        stddev[year] = np.std(data_subset['dh'])
+        # append data to dictionary
+        hypso_bins[year] = hypso_subset
 
-    # convert cumulative values to absolute and visualize the hypsometric analysis
+    # convert absolute values to relative
     for year in hypso_bins:
         if year != 2022:
             hypso_bins[year]['abs'] = hypso_bins[year].value - hypso_bins[year+1].value
 
-    return hypso_bins, stddev
+    return hypso_bins

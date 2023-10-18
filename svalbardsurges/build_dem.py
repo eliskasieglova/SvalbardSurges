@@ -25,7 +25,7 @@ from tqdm import tqdm
 import shapely.geometry
 from zipfile import ZipFile
 
-from svalbardsurges import download_file
+from svalbardsurges import download
 
 def align_bounds(
     bounds: rio.coords.BoundingBox | dict[str, float],
@@ -183,7 +183,7 @@ def build_npi_mosaic(verbose: bool = True) -> tuple[Path, Path]:
 
         if not filepath.is_file():
             filepath.parent.mkdir(parents=True, exist_ok=True)
-            download_file.download_file(url, directory='cache/NP_DEMs')
+            download.download_file(url, directory='cache/NP_DEMs')
 
             with ZipFile(filepath) as zObject:
                 zObject.extractall(Path('cache/NP_DEMs/'))
@@ -241,5 +241,5 @@ def build_npi_mosaic(verbose: bool = True) -> tuple[Path, Path]:
     )
 
     if verbose:
-        print('Mosaic should be saved ;)')
-    return output_path, output_year_path
+        print('Mosaic saved.')
+    return output_path

@@ -3,18 +3,20 @@ import geopandas as gpd
 import svalbardsurges.paths as paths
 
 
-def load_shp(glacier_id):
+def load_shp(file_path, glacier_id):
     """
     Loads a single glacier as shapefile from the GAO dataset.
 
     Parameters
     ----------
+    - file_path
+        path to shapefile
     - glacier name
         name of glacier we want to load as string
 
     Returns
     -------
-    Returns .shp of the outline of selected glacier.
+    Returns .shp of selected glacier.
     """
 
     # load shapefile of glacier area outlines converted to EPSG:32633

@@ -7,71 +7,101 @@ from pathlib import Path
 if socket.gethostname() == "DESKTOP-09DFBN6":
     os.environ["PROJ_DATA"] =  "C:\\Users\\eliss\\anaconda3\\envs\\SvalbardSurges\\Lib\\site-packages\\pyproj\\proj_dir\\share\\proj"
 
-import svalbardsurges.plotting
-import svalbardsurges.analysis
-import svalbardsurges.utilities
-import svalbardsurges.inputs.is2
-import svalbardsurges.inputs.dems
-import svalbardsurges.inputs.shp
-import svalbardsurges.download_file
-import svalbardsurges.paths
-import svalbardsurges.build_dem
+from svalbardsurges import plotting
+from svalbardsurges import analysis
+from svalbardsurges import utilities
+from svalbardsurges import download
+from svalbardsurges import paths
+from svalbardsurges import build_dem
+from svalbardsurges.inputs import dems
+from svalbardsurges.inputs import shp
+from svalbardsurges.inputs import is2
 
 def main():
 
-    # open IS2 data
-    is2 = xr.open_dataset(svalbardsurges.paths.is2_filename)
+    # create directories for caching and saving figures if do not exist
+    if not os.path.isdir("cache/"):
+        os.mkdir("cache/")
 
-    # build DEM
-    svalbardsurges.build_dem.build_npi_mosaic(verbose=True)
+    if not os.path.isdir("figures/"):
+        os.mkdir("figures/")
 
-    # download DEM and glacier area outlines
-    dem = svalbardsurges.download_file.download_file(svalbardsurges.paths.dem_url, 'dem.zip')
-    gao = svalbardsurges.download_file.download_file(svalbardsurges.paths.gao_url, 'gao.zip')
+    # build DEM mosaic
+    dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True) #DEM (NPI)
 
-    # list of glacier ids
+    # download Glacier Area Outlines
+    if not paths.gao_path.is_file():
+        download.download_file(paths.gao_url, paths.gao_path)
+
+    # list of glacier IDs
     glacier_ids = [13406.1,
                    13218.1,
                    13499.02,
                    13410,
-                   13413.1,
                    13218.2,
                    13408.1,
-                   13412
+                   13412,
+                   13413.1,
                 ]
 
+    #
     for glacier_id in glacier_ids:
+        # load glacier outline
+        glacier_outline = shp.load_shp(paths.gao_path, glacier_id)
+        glacier_name = glacier_outline.NAME.iloc[0]
 
-        label = str(glacier_id)
+        # create directory for saving figures
+        if not os.path.isdir(f"figures/{glacier_name}"):
+            os.mkdir(f"figures/{glacier_name}")
 
-        # load single glacier outline based on glacier ID
-        glacier_outline = svalbardsurges.inputs.shp.load_shp(glacier_id)
-
-        # set bounds according to glacier outline
+        # compute bounds of glacier outline
         bounds = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
-        # subset IS2 data by chosen bounds
-        is2_subset = svalbardsurges.analysis.subset_is2(is2, bounds, label)
+        # subset data to glacier outline
+        is2_subset_path = is2.subset_is2(
+            input_path=paths.is2_path,
+            bounds=bounds,
+            glacier_outline=glacier_outline,
+            output_path=Path(f"cache/{glacier_name}-is2-clipped.nc"))
 
-        # subset DEM to glacier area outline
-        subset_dem = svalbardsurges.inputs.dems.load_dem(bounds, glacier_outline.NAME.iloc[0])
-        masked_dem = svalbardsurges.inputs.dems.mask_dem(subset_dem, glacier_outline)
+        dem_subset_path = dems.load_dem(
+            input_path=dem_mosaic_path,
+            bounds=bounds,
+            label=glacier_name)
 
         # get elevation difference between IS2 and reference DEM
-        is2_dh = svalbardsurges.analysis.IS2_DEM_difference(masked_dem, is2_subset, label)
+        is2_dh_path = analysis.IS2_DEM_difference(
+            dem_path=dem_subset_path,
+            is2_path=is2_subset_path,
+            glacier_outline=glacier_outline,
+            output_path=Path(f"cache/{glacier_name}-is2-dh.nc"))
 
-        # do hypsometric binning of glacier
-        #hypso = svalbardsurges.analysis.hypsometric_binning(is2_dh)
+        # hypsometric binning of glacier
+        hypso = analysis.hypsometric_binning(is2_dh_path)
 
-        # compute statistics
-        #stat = svalbardsurges.analysis.statistics(is2_dh)
+        # plot hypsometric curves and yearly dh for glacier
+        plotting.plot_hypso_curves(
+            data=hypso,
+            glacier_id=glacier_id,
+            glacier_name=glacier_name,
+            glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
+            output_path=Path(f'figures/{glacier_name}/{glacier_id}_hypsocurves.png'))
 
-        # plot hypsometric curves
-        svalbardsurges.plotting.plot_hypso_curves(is2_dh, label, glacier_outline)
-        svalbardsurges.plotting.plot_yearly_dh(is2_dh, label, glacier_outline)
+        plotting.plot_yearly_dh(
+            data_path=is2_dh_path,
+            glacier_outline=glacier_outline,
+            glacier_name=glacier_name,
+            glacier_id=glacier_id,
+            output_path=Path(f'figures/{glacier_id}_yearlydh.png'))
 
+        # validate results using ArcticDEM
+        #svalbardsurges.inputs.dems.validate(Path('arcticdem/'),
+        #                                    subset_dem,
+        #                                    bounds,
+        #                                    glacier_outline,
+        #                                    Path('arcticdem_year'))
 
-        print(f'Glacier {label} without errors.')
+        print(f'Glacier {glacier_id} without errors.')
 
 if __name__ == "__main__":
     main()
