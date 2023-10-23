@@ -1,7 +1,4 @@
-from pathlib import Path
 import geopandas as gpd
-from svalbardsurges import paths
-
 
 def load_shp(file_path, id_attribute_name, glacier_id):
     """
