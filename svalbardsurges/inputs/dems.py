@@ -8,7 +8,6 @@ import os
 from matplotlib import pyplot as plt
 import numpy as np
 
-
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
     import numba

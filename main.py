@@ -9,7 +9,6 @@ if socket.gethostname() == "DESKTOP-09DFBN6":
 
 from svalbardsurges import plotting
 from svalbardsurges import analysis
-from svalbardsurges import utilities
 from svalbardsurges import download
 from svalbardsurges import paths
 from svalbardsurges import build_dem
@@ -27,28 +26,29 @@ def main():
         os.mkdir("figures/")
 
     # build DEM mosaic
-    dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True) #DEM (NPI)
+    dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True) # DEM (NPI)
 
     # download Glacier Area Outlines
-    if not paths.gao_path.is_file():
-        download.download_file(paths.gao_url, paths.gao_path)
+    if not paths.rgi_path.is_file():
+        download.download_file(paths.rgi_url, paths.rgi_name)
 
     # list of glacier IDs
-    glacier_ids = [13406.1,
-                   13218.1,
-                   13499.02,
-                   13410,
-                   13218.2,
-                   13408.1,
-                   13412,
-                   13413.1,
+    glacier_ids = ['G016885E77574N',
+                   'G016964E77694N',
+                   'G017911E77804N',
+                   'G018098E77802N'
                 ]
 
     #
     for glacier_id in glacier_ids:
+
         # load glacier outline
-        glacier_outline = shp.load_shp(paths.gao_path, glacier_id)
-        glacier_name = glacier_outline.NAME.iloc[0]
+        glacier_outline = shp.load_shp(
+            file_path=str(paths.rgi_path),
+            id_attribute_name='glims_id',
+            glacier_id=glacier_id)
+
+        glacier_name = glacier_outline.glac_name.iloc[0]
 
         # create directory for saving figures
         if not os.path.isdir(f"figures/{glacier_name}"):
@@ -65,7 +65,7 @@ def main():
             output_path=Path(f"cache/{glacier_name}-is2-clipped.nc"))
 
         dem_subset_path = dems.load_dem(
-            input_path=dem_mosaic_path,
+            input_path=dem_mosaic_path[0],
             bounds=bounds,
             label=glacier_name)
 
