@@ -3,11 +3,12 @@ import geoutils as gu
 import rasterio as rio
 import variete
 import variete.vrt.vrt
-import warnings
+
 import os
 from matplotlib import pyplot as plt
 import numpy as np
 
+import warnings
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
     import numba
@@ -121,7 +122,7 @@ def validate(arcticDEM_directory, ref_dem_path, bounds, glacier_outline, output_
         dems[year] = dem_masked
 
     # cache
-    output_name = Path(f'figures/{glacier_outline.IDENT.iloc[0]}_arcticdem_hypso_curves.png')
+    output_name = Path(f'figures/{glacier_outline.IDENT.iloc[0]}_adem_hypso.png')
 
     if output_name.is_file():
         return
@@ -131,20 +132,10 @@ def validate(arcticDEM_directory, ref_dem_path, bounds, glacier_outline, output_
         year = int(year)
 
         dem1 = xdem.DEM(str(dems[str(year)])).reproject(ref_dem)
-
         dem_difference = dem1 - ref_dem
 
         plt.figure()
         plt.title(f'{glacier_outline.NAME.iloc[0]}({glacier_outline.IDENT.iloc[0]}), {year + 1}')
-
-        polygon = glacier_outline.iloc[0]["geometry"]
-        if "Multi" not in polygon.geom_type:
-            polygons = [polygon]
-        else:
-            polygons = polygon.geoms
-
-        for polygon in polygons:
-            plt.plot(*polygon.exterior.xy, color='black')
 
         dem_difference.show(vmin=-50, vmax=50, cmap='seismic_r')
         plt.savefig(f'figures/{glacier_outline.IDENT.iloc[0]}_arcticdem_{year}.png')
@@ -159,8 +150,8 @@ def validate(arcticDEM_directory, ref_dem_path, bounds, glacier_outline, output_
         dem1 = xdem.DEM(str(dems[str(year)])).reproject(ref_dem)
 
         dem_difference = dem1 - ref_dem
-        # create hypsometric binning
 
+        # create hypsometric binning
         if np.count_nonzero(np.isfinite(dem_difference.data.filled(np.nan))) == 0:
             continue
         hypso = xdem.volume.hypsometric_binning(ddem=dem_difference.data, ref_dem=dem1.data, kind='custom', bins=bins)

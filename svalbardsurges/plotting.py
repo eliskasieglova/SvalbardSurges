@@ -1,7 +1,13 @@
 import matplotlib.pyplot as plt
 import xarray as xr
+import warnings
+# Catch a deprecation warning that arises from skgstat when importing xDEM
+with warnings.catch_warnings():
+    import numba
+    warnings.simplefilter("ignore", numba.NumbaDeprecationWarning)
+    import xdem
 
-def plot_hypso_curves(data, glacier_id, glacier_name, glacier_area, output_path):
+def plot_hypso_is2(data, glacier_id, glacier_name, glacier_area, output_path):
     """
     Plot hypsometric curves.
 
@@ -25,13 +31,13 @@ def plot_hypso_curves(data, glacier_id, glacier_name, glacier_area, output_path)
         return
 
     # initialize subplots and n value for visualization
-    plt.subplots(2, 2, sharey=True, sharex=True)
+    plt.subplots(2, 3, sharey=True, sharex=True)
     plt.suptitle(f'{glacier_name} ({glacier_id})', fontsize=16)
 
     n = 1
-    for year in list(data)[:-1]:
+    for year in list(data):
         # plot histogram
-        ax1 = plt.subplot(2, 2, n)
+        ax1 = plt.subplot(2, 3, n)
         ax1.barh(y = data[year].index.mid,
                  width = data[year]['count']/glacier_area,
                  height = data[year].index.right - data[year].index.left,
@@ -44,7 +50,7 @@ def plot_hypso_curves(data, glacier_id, glacier_name, glacier_area, output_path)
         # plot hypsometric curve
         ax2 = ax1.twiny()
         ax2.plot(data[year]['value'], data[year].index.mid, zorder=100)
-        ax2.set_title(f"2010-{year + 1}")
+        ax2.set_title(f"2010-{year}")
         ax2.set_facecolor('aliceblue')
         ax2.set_xlim(-30, 30)
 
@@ -128,6 +134,115 @@ def plot_is2(data):
 
     # filter out nan
     is2 = data.where(data.dem_elevation < 2000).dropna(dim='index')
-    #is2 = data.dropna(dim='index')
 
     return is2
+
+def plot_hypso_arcticdem(data, glacier_id, glacier_name, glacier_area, output_path):
+    """
+    Plot hypsometric curves from ArcticDEM data.
+
+    Parameters
+    ----------
+    -data
+        Dictionary of pd dataframes of yearly binned elevation changes.
+    -glacier_id
+        glacier id for plot title and naming figure
+    glacier_name
+        glacier name for plot title and naming figure
+    glacier_area
+        glacier area in km2 for creating histogram (points per square kilometer)
+
+     Results
+     -------
+     Saved figure of hypsometric curves and histograms for each year in dataset.
+    """
+
+    if output_path.is_file():
+        return
+
+    # initialize subplots and n value for visualization
+    plt.subplots(2, 3, sharey=True, sharex=True)
+    plt.suptitle(f'{glacier_name} ({glacier_id}) - ArcticDEM', fontsize=16)
+
+    n = 1
+    for year in list(data):
+        # plot histogram
+        ax1 = plt.subplot(2, 3, n)
+        ax1.barh(y = data[year].index.mid,
+                 width = data[year]['count']/glacier_area,
+                 height = data[year].index.right - data[year].index.left,
+                 edgecolor="black",
+                 zorder=0,
+                 alpha=0.1
+             )
+        ax1.set_xlim(0,1000)
+
+        # plot hypsometric curve
+        ax2 = ax1.twiny()
+        ax2.plot(data[year]['value'], data[year].index.mid)
+        ax2.set_title(f"2010-{year}")
+        ax2.set_facecolor('aliceblue')
+        ax2.set_xlim(-40, 40)
+
+        n = n + 1
+
+    plt.tight_layout()
+
+    # save figure
+    plt.savefig(output_path)
+    plt.close()
+
+    return
+
+def plot_arcticDEM_dh(data, ref_dem_path, year, glacier_outline, glacier_name, glacier_id, output_path):
+    '''
+    Plot ArcticDEM difference compared to reference year (2010).
+
+    Parameters:
+    -----------
+    - data
+        dictionary of paths to cropped ArcticDEMs
+    - year
+        determined by for-loop which loops through available years
+    - glacier_outline
+        shapefile of glacier outline to be plotted
+    - output_path
+        path where output figure should be saved
+
+    Returns:
+    --------
+    Saves figure of map of glacier elevation changes from ArcticDEM for each available year.
+    '''
+
+    if output_path.is_file():
+        return
+
+    # load data
+    ref_dem = xdem.DEM(ref_dem_path)
+    arcticdem = xdem.DEM(data[year]).reproject(ref_dem)
+
+    # create difference DEM
+    d_dem = arcticdem - ref_dem
+
+    # initiate plot
+    plt.figure()
+    plt.title(f'{glacier_name}({glacier_id}), 2010-{year}, ArcticDEM')
+
+    # plot shapefile (glacier outline)
+    polygon = glacier_outline.iloc[0]["geometry"]
+    if "Multi" not in polygon.geom_type:
+        polygons = [polygon]
+    else:
+        polygons = polygon.geoms
+
+    for polygon in polygons:
+        plt.plot(*polygon.exterior.xy, color='black')
+
+    # plot difference DEM
+    d_dem.show(vmin=-50, vmax=50, cmap='seismic_r')
+
+    # save figure
+    plt.savefig(output_path)
+    plt.close()
+
+    return

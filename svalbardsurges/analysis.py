@@ -2,7 +2,6 @@ import xarray as xr
 from pathlib import Path
 import numpy as np
 import warnings
-from matplotlib import pyplot as plt
 import rasterio as rio
 
 # Catch a deprecation warning that arises from skgstat when importing xDEM
@@ -53,7 +52,16 @@ def IS2_DEM_difference(dem_path, is2_path, glacier_outline, output_path):
 
     return output_path
 
-def hypsometric_binning(input_path):
+def create_bins(data_path):
+
+    # open data
+    data = xr.open_dataset(data_path)
+
+    bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
+
+    return bins
+
+def hypso_is2(input_path, bins):
     """
     Hypsometric binning of glacier elevation changes.
 
@@ -71,17 +79,17 @@ def hypsometric_binning(input_path):
     data = xr.open_dataset(input_path)
 
     # empty dictionary to append binned elevation differences by year
-    hypso_bins = { }
-    stddev = { }
+    hypso_bins = {}
 
     # count bins
-    bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
+    #bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
+    #bins = np.array([0, 250, 500, 750, 900])
 
     for year, data_subset in data.groupby(data["date"].dt.year):
         # create hypsometric bins
         hypso_subset = xdem.volume.hypsometric_binning(
-            ddem=data_subset["dh"],
-            ref_dem=data_subset["dem_elevation"],
+            ddem=data_subset['dh'],
+            ref_dem=data_subset['dem_elevation'],
             kind="custom",
             bins=bins,
             aggregation_function=np.nanmean
@@ -90,9 +98,46 @@ def hypsometric_binning(input_path):
         # append data to dictionary
         hypso_bins[year] = hypso_subset
 
-    # convert absolute values to relative
-    for year in hypso_bins:
-        if year != 2022:
-            hypso_bins[year]['abs'] = hypso_bins[year].value - hypso_bins[year+1].value
-
     return hypso_bins
+
+def hypso_dem(dems, bins, ref_dem):
+    """
+    Hypsometric binning of glacier elevation changes from ArcticDEM data. Function used for
+    validation.
+
+    Parameters
+    ----------
+    - dems
+        dictionary containing paths leading to yearly DEMs
+    - ref_dem
+        reference DEM from 2010
+
+    Results
+    -------
+    Dictionary of binned data.
+    """
+
+    # load reference DEM
+    ref_dem = xdem.DEM(ref_dem)
+
+    # create bins
+    #bins = np.nanpercentile(ref_dem.data.filled(np.nan), np.linspace(0, 100, 6))
+    #bins[-1] *= 1.1
+
+    #bins = np.array([0, 250, 500, 750, 900])
+
+    # initialize empty dictionary for storing binned data
+    hypso = {}
+
+    for year in dems:
+        # create difference DEM (current year compared to 2010)
+        d_dem = xdem.DEM(dems[year]) - ref_dem
+
+        # no empty values
+        if np.count_nonzero(np.isfinite(d_dem.data.filled(np.nan))) == 0:
+            continue
+
+        # hypsometric binning
+        hypso[year] = xdem.volume.hypsometric_binning(ddem=d_dem.data, ref_dem=ref_dem.data, kind='custom', bins=bins)
+
+    return hypso
