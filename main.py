@@ -13,36 +13,81 @@ from svalbardsurges import paths
 from svalbardsurges import build_dem
 from svalbardsurges.inputs import dems
 from svalbardsurges.inputs import shp
-from svalbardsurges.inputs import is2
+from svalbardsurges.inputs import icesat
 
 def main():
 
-    dataset = 'rgi'
+    # CHOOSE VARIABLES
+    # for datasets we want to be working with
+    # ---------------------------------------
 
-    # create directories for caching and saving figures if do not exist
-    if not os.path.isdir("cache/"):
+    # ICESat-2
+    icesat_product = 'ATL08' # or ATL06 or ATL03
+    spatial_extent = [5, 75, 40, 82]
+    date_range = ['2022-06-01', '2022-07-01']
+    icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
+
+    # Glacier Outlines
+    glacier_inventory = 'rgi' # or 'gao'. will assign download url and filenames accordingly
+
+    # ------------------------------------------------------------------------
+    # CREATE DIRECTORIES
+    # which will be used for caching/saving data (if dirs don't exist already)
+    # ------------------------------------------------------------------------
+    if not os.path.isdir("cache/"): # caching
         os.mkdir("cache/")
 
-    if not os.path.isdir("figures/"):
+    if not os.path.isdir("figures/"): # folder for figures (saving plots)
         os.mkdir("figures/")
 
-    # build DEM mosaic
+    if not os.path.isdir('data/'): # saving main datasets (glacier outlines, dem, is2)
+        os.mkdir('data/')
+
+    # DOWNLOAD ICESAT-2 DATA
+    # using icepyx
+    # ----------------------
+
+    download.download_is2(
+        data_product=icesat_product,
+        spatial_extent=spatial_extent,
+        date_range=date_range,
+        output_path=Path(f'cache/is2_{icesat_product}')
+    )
+
+    # READ DATA
+    # -----------------------------------------------
+    # read data using functions from Desiree
+    if not icesat_filepath.is_file():
+        icesat.ATL08_to_xr('cache/is2_ATL08', icesat_filepath)
+
+    # DOWNLOAD OTHER DATA (DEM, GLACIER OUTLINES)
+    # -------------------------------------------
+    # BUILD DEM MOSAIC from NPI
+    # function from Erik
     dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True)
 
+    # GLACIER AREA OUTLINES
+    # variables for chosen glacier inventory
+    if glacier_inventory == 'rgi':
+        glacinv_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/3df9512e5a73841b1a23c38cf4e815e3'
+        glacinv_filepath = Path('data/rgi.zip')
+    if glacier_inventory == 'gao':
+        glacinv_url = 'https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0770_rgi_v7/regional_files/RGI2000-v7.0-G/RGI2000-v7.0-G-07_svalbard_jan_mayen.zip'
+        glacinv_filepath = Path('data/gao.zip')
+
     # download glacier outlines (RGI or GAO)
-    if not paths.rgi_path.is_file():
-        download.download_file(paths.rgi_url, paths.rgi_name)
+    # download functions from Erik
+    if not glacinv_filepath.is_file():
+        download.download_file(glacinv_url, glacinv_filepath)
 
-    # list of glacier IDs
-
-    if dataset == 'gao':
+    # list of glacier IDs based on selected inventory
+    if glacier_inventory == 'gao':
         glacier_ids = [
             13410,
             13218.1,
             13406.1
         ]
-
-    if dataset == 'rgi':
+    if glacier_inventory == 'rgi':
         glacier_ids = [
             'G016964E77694N',
             'G017525E77773N',
@@ -50,49 +95,56 @@ def main():
             'G016885E77574N'
         ]
 
+    # determine name of ID attribute based on chosen glacier inventory
+    if glacier_inventory == 'rgi':
+        id_attr = 'glims_id'
+    if glacier_inventory == 'gao':
+        id_attr = 'IDENT'
+
+    # --------------------------------------------------------------------
+    # START OF ACTUAL CODE
+    # --------------------------------------------------------------------
+
     for glacier_id in glacier_ids:
 
         # load glacier outline
         glacier_outline = shp.load_shp(
-            file_path=str(paths.rgi_path),
-            id_attribute_name='glims_id',
+            file_path=str(glacinv_filepath),
+            id_attribute_name=id_attr,
             glacier_id=glacier_id)
 
         glacier_name = glacier_outline.glac_name.iloc[0]
 
-        # create directory for saving figures
-        if not os.path.isdir(f"figures/{glacier_name}"):
-            os.mkdir(f"figures/{glacier_name}")
-
-        if not os.path.isdir(f"figures/{glacier_name}/{dataset}"):
-            os.mkdir(f"figures/{glacier_name}/{dataset}")
+        # create directory for saving figures for each glacier separately
+        if not os.path.isdir(f"figures/{glacier_name}/{glacier_inventory}"):
+            os.mkdir(f"figures/{glacier_name}/{glacier_inventory}")
 
         # compute bounds of glacier outline
-        bounds = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
+        spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
         # subset data to glacier outline
-        is2_subset_path = is2.subset_is2(
-            input_path=paths.is2_path,
-            bounds=bounds,
+        is2_subset_path = icesat.subset_is2(
+            input_path=icesat_filepath,
+            spatial_extent=spatial_extent,
             glacier_outline=glacier_outline,
-            output_path=Path(f"cache/{glacier_name}-is2-clipped_{dataset}.nc"))
+            output_path=Path(f"cache/{glacier_name}-is2-clipped_{glacier_inventory}.nc"))
 
         dem_subset_path = dems.load_dem(
             input_path=dem_mosaic_path[0],
-            bounds=bounds,
-            label=f'{glacier_name}_{dataset}')
+            spatial_extent=spatial_extent,
+            label=f'{glacier_name}_{glacier_inventory}')
 
         dem_masked_path= dems.mask_dem(
             dem_subset_path,
             glacier_outline,
-            label=f'{glacier_name}_{dataset}')
+            label=f'{glacier_name}_{glacier_inventory}')
 
         # get elevation difference between IS2 and reference DEM
         is2_dh_path = analysis.IS2_DEM_difference(
             dem_path=dem_subset_path,
             is2_path=is2_subset_path,
             glacier_outline=glacier_outline,
-            output_path=Path(f"cache/{glacier_name}-is2-dh_{dataset}.nc")
+            output_path=Path(f"cache/{glacier_name}-is2-dh_{glacier_inventory}.nc")
         )
 
         bins = analysis.create_bins(is2_dh_path)
@@ -109,7 +161,7 @@ def main():
             glacier_id=glacier_id,
             glacier_name=glacier_name,
             glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
-            output_path=Path(f'figures/{glacier_name}/{dataset}/{glacier_id}_hypso_{dataset}.png')
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}.png')
         )
 
         plotting.plot_yearly_dh(
@@ -117,7 +169,7 @@ def main():
             glacier_outline=glacier_outline,
             glacier_name=glacier_name,
             glacier_id=glacier_id,
-            output_path=Path(f'figures/{glacier_name}/{dataset}/{glacier_id}_yearlydh_{dataset}.png')
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}.png')
         )
 
         print(f'{glacier_name} analysis without errors.')
@@ -136,13 +188,13 @@ def main():
 
             arcticDEM_subset_path = dems.load_dem(
                 input_path=arcticDEM_dir/file,
-                bounds=bounds,
-                label=f'arcticdem_{glacier_name}_{dataset}_{year}')
+                spatial_extent=spatial_extent,
+                label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}')
 
             arcticDEM_masked_path = dems.mask_dem(
                 dem_path=arcticDEM_subset_path,
                 glacier_outline=glacier_outline,
-                label=f'arcticdem_{glacier_name}_{dataset}_{year}')
+                label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}')
 
             arcticDEMs[year] = arcticDEM_masked_path
 
@@ -161,7 +213,7 @@ def main():
             glacier_id=glacier_id,
             glacier_name=glacier_name,
             glacier_area=glacier_outline.area.iloc[0]/1e6,
-            output_path=Path(f'figures/{glacier_name}/{dataset}/{glacier_id}_ademhypso_{dataset}.png')
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso_{glacier_inventory}.png')
         )
 
         # plot elevation differences
@@ -174,7 +226,7 @@ def main():
                     glacier_outline=glacier_outline,
                     glacier_name=glacier_name,
                     glacier_id=glacier_id,
-                    output_path=Path(f'figures/{glacier_name}/{dataset}/{glacier_id}_ademhypso{year}_{dataset}.png'),
+                    output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso{year}_{glacier_inventory}.png'),
                 )
 
 if __name__ == "__main__":

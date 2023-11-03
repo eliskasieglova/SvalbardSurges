@@ -85,8 +85,8 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
     Saves figure of plotted yearly elevation differences.
     """
 
-    if output_path.is_file():
-        return
+    #if output_path.is_file():
+    #    return
 
     data = xr.open_dataset(data_path)
 
@@ -119,6 +119,7 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
     cbar_ax = fig.add_axes([0.86, 0.15, 0.05, 0.7])
     fig.colorbar(im, cax=cbar_ax)
     plt.savefig(output_path)
+    plt.show()
     plt.close()
 
     return

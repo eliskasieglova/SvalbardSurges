@@ -161,8 +161,8 @@ def build_npi_mosaic(verbose: bool = True) -> tuple[Path, Path]:
     data_dir = Path('cache/NP_DEMs')
     temp_dir = Path('cache/')
 
-    output_path = temp_dir.joinpath("npi_mosaic_clip.tif")
-    output_year_path = temp_dir.joinpath("npi_mosaic_clip_years.tif")
+    output_path = Path("data/npi_mosaic_clip.tif")
+    output_year_path = Path("data/npi_mosaic_clip_years.tif")
 
     if output_path.is_file() and output_year_path.is_file():
         return output_path, output_year_path

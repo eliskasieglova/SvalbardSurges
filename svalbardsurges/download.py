@@ -3,6 +3,9 @@ import shutil
 import os
 from pathlib import Path
 import requests
+import icepyx as ipx
+from matplotlib import pyplot as plt
+
 
 def download_file(url: str, filename: str | None = None, directory: Path | str | None = None) -> Path:
     """
@@ -52,4 +55,50 @@ def download_file(url: str, filename: str | None = None, directory: Path | str |
                 shutil.move(temp_path, out_path)
 
     return out_path
+
+def download_is2(spatial_extent, date_range, output_path, data_product = 'ATL08'):
+    """
+    Download is2 data
+
+    Params:
+    ------
+    - spatial_extent
+
+
+    - date_range
+
+
+    - output_path
+
+
+    - data_product
+        ATL03/6/8 in str format. Defaults to 'ATL08'.
+
+    Return:
+    ------
+    Output path to ICESat-2 data product.
+    """
+
+    if output_path.is_dir():
+        return output_path
+
+    region_a = ipx.Query(
+        data_product,
+        spatial_extent,
+        date_range,
+        start_time='00:00:00',
+        end_time='23:59:59'
+    )
+
+    region_a.avail_granules()
+    region_a.granules.avail
+
+    region_a.earthdata_login()
+
+    region_a.order_granules(subset=False)
+    region_a.download_granules(output_path)
+
+    return output_path
+
+
 

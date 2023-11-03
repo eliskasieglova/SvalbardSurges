@@ -1,5 +1,4 @@
 import xarray as xr
-from pathlib import Path
 import numpy as np
 import warnings
 import rasterio as rio
@@ -28,8 +27,8 @@ def IS2_DEM_difference(dem_path, is2_path, glacier_outline, output_path):
     """
 
     # if subset already exists open dataset
-    if output_path.is_file():
-        return output_path
+    #if output_path.is_file():
+    #    return output_path
 
     is2 = xr.open_dataset(is2_path)
 
@@ -37,11 +36,11 @@ def IS2_DEM_difference(dem_path, is2_path, glacier_outline, output_path):
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
         is2["dem_elevation"] = "index", np.fromiter(
             raster.sample(
-                np.transpose([is2.easting.values, is2.northing.values]),
+                np.transpose([is2.longitude.values, is2.latitude.values]),
                 masked=True
             ),
             dtype=raster.dtypes[0],
-            count=is2.easting.shape[0]
+            count=is2.longitude.shape[0]
         )
 
     # subtract IS2 elevation from DEM elevation (with elevation correction)
@@ -80,10 +79,6 @@ def hypso_is2(input_path, bins):
 
     # empty dictionary to append binned elevation differences by year
     hypso_bins = {}
-
-    # count bins
-    #bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
-    #bins = np.array([0, 250, 500, 750, 900])
 
     for year, data_subset in data.groupby(data["date"].dt.year):
         # create hypsometric bins
