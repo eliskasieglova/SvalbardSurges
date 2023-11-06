@@ -9,45 +9,45 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", numba.NumbaDeprecationWarning)
     import xdem
 
-def IS2_DEM_difference(dem_path, is2_path, glacier_outline, output_path):
+def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     """
     Get elevation difference between ICESat-2 data and reference DEM.
 
     Parameters
     ----------
     - dem
-        reference dem
-    - is2
-        ICESat-2 dataset
+        path to reference dem
+    - icesat_path
+        path to ICESat-2 dataset
 
     Returns
     -------
     ICESat-2 dataset with the additional values of "dem_elevation" (retained values of reference DEM)
-    and "dh" (difference between IS2 and reference DEM)
+    and "dh" (difference between ICESat-2 and reference DEM)
     """
 
-    # if subset already exists open dataset
-    #if output_path.is_file():
-    #    return output_path
+    # if subset already exists return path
+    if output_path.is_file():
+        return output_path
 
-    is2 = xr.open_dataset(is2_path)
+    icesat = xr.open_dataset(icesat_path)
 
     with rio.open(dem_path) as raster, warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
-        is2["dem_elevation"] = "index", np.fromiter(
+        icesat["dem_elevation"] = "index", np.fromiter(
             raster.sample(
-                np.transpose([is2.longitude.values, is2.latitude.values]),
+                np.transpose([icesat.longitude.values, icesat.latitude.values]),
                 masked=True
             ),
             dtype=raster.dtypes[0],
-            count=is2.longitude.shape[0]
+            count=icesat.longitude.shape[0]
         )
 
-    # subtract IS2 elevation from DEM elevation (with elevation correction)
-    is2["dh"] = is2["h_te_best_fit"] - is2["dem_elevation"] - 31.55
+    # subtract ICESat-2 elevation from DEM elevation (with elevation correction)
+    icesat["dh"] = icesat["h"] - icesat["dem_elevation"] - 31.55
 
     # save as netcdf file
-    is2.to_netcdf(output_path)
+    icesat.to_netcdf(output_path)
 
     return output_path
 
@@ -68,6 +68,7 @@ def hypso_is2(input_path, bins):
     ----------
     - input_path
         path to IS2 dataset containing the variables 'dh' and 'dem_elevation'
+    - bins
 
     Results
     -------
@@ -79,6 +80,8 @@ def hypso_is2(input_path, bins):
 
     # empty dictionary to append binned elevation differences by year
     hypso_bins = {}
+
+
 
     for year, data_subset in data.groupby(data["date"].dt.year):
         # create hypsometric bins

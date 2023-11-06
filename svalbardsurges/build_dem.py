@@ -27,6 +27,8 @@ from zipfile import ZipFile
 
 from svalbardsurges import download
 
+# SCRIPT FROM ERIK
+
 def align_bounds(
     bounds: rio.coords.BoundingBox | dict[str, float],
     res: tuple[float, float] | None = None,

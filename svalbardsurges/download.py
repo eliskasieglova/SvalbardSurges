@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 def download_file(url: str, filename: str | None = None, directory: Path | str | None = None) -> Path:
     """
     Download a file from the requested URL.
+    Function from Erik.
 
     Parameters
     ----------
@@ -56,32 +57,34 @@ def download_file(url: str, filename: str | None = None, directory: Path | str |
 
     return out_path
 
-def download_is2(spatial_extent, date_range, output_path, data_product = 'ATL08'):
+def download_icesat(spatial_extent, date_range, data_product):
     """
-    Download is2 data
+    Download ICESat-2 data from earthdata.
 
-    Params:
+    Reccomendation: have earthdata login details stored as environment variables (EARTHDATA_USERNAME, EARTHDATA_PASSWORD)
+
+    Params
     ------
     - spatial_extent
-
-
+        bounding box of wanted area as list of coords [left, bottom, right, top] in decimal degrees
     - date_range
-
-
-    - output_path
-
-
+        list of beginning and end of time span ['yyyy-mm-dd', 'yyyy-mm-dd']
     - data_product
-        ATL03/6/8 in str format. Defaults to 'ATL08'.
+        'ATL03/6/8' as str.
 
-    Return:
+    Return
     ------
     Output path to ICESat-2 data product.
     """
 
+    # granules are saved to cache
+    output_path = Path(f'cache/is2_{data_product}')
+
+    # if data is already downloaded don't run this function
     if output_path.is_dir():
         return output_path
 
+    # specifications for download
     region_a = ipx.Query(
         data_product,
         spatial_extent,
@@ -93,8 +96,10 @@ def download_is2(spatial_extent, date_range, output_path, data_product = 'ATL08'
     region_a.avail_granules()
     region_a.granules.avail
 
-    region_a.earthdata_login()
+    # login to earthdata
+    region_a.earthdata_login()  # EARTHDATA_USERNAME and EARTHDATA_PASSWORD as environment variables
 
+    # order and download granules, save them to cache/is2_{dataproduct}
     region_a.order_granules(subset=False)
     region_a.download_granules(output_path)
 
