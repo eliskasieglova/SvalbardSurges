@@ -36,11 +36,11 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
         icesat["dem_elevation"] = "index", np.fromiter(
             raster.sample(
-                np.transpose([icesat.longitude.values, icesat.latitude.values]),
+                np.transpose([icesat.easting.values, icesat.northing.values]),
                 masked=True
             ),
             dtype=raster.dtypes[0],
-            count=icesat.longitude.shape[0]
+            count=icesat.easting.shape[0]
         )
 
     # subtract ICESat-2 elevation from DEM elevation (with elevation correction)
@@ -80,8 +80,6 @@ def hypso_is2(input_path, bins):
 
     # empty dictionary to append binned elevation differences by year
     hypso_bins = {}
-
-
 
     for year, data_subset in data.groupby(data["date"].dt.year):
         # create hypsometric bins

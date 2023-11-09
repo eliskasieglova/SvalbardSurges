@@ -1,6 +1,6 @@
-import socket
 import os
 from pathlib import Path
+import socket
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -21,11 +21,10 @@ def main():
     # ---------------------------------------
 
     # ICESat-2 download specifications
-    icesat_product = 'ATL08' # or ATL06 or ATL03
+    icesat_product = 'ATL03' # or ATL06 or ATL03
     spatial_extent = [5, 75, 40, 82] # svalbard
     date_range = ['2022-06-01', '2022-07-01']
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
-
 
     # Glacier Outlines
     glacier_inventory = 'rgi' # or 'gao'. will assign download url and filenames accordingly
@@ -47,17 +46,18 @@ def main():
     # DOWNLOAD DATA
     # --------------------------------------------------------
 
-    # download icesat-2 data using icepyx. data product is selected at beginning of code.
+    # DOWNLOAD ICESAT-2
+    # using icepyx. data product is selected at beginning of code.
     download.download_icesat(
         data_product=icesat_product,
         spatial_extent=spatial_extent,
         date_range=date_range
     )
 
-    # read atl08 data using functions from Desiree
+    # save as netcdf
     icesat.read_icesat(icesat_product, icesat_filepath)
 
-    # BUILD DEM MOSAIC from NPI, function from Erik
+    # BUILD DEM MOSAIC from NPI (function from Erik)
     dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True)
 
     # DOWNLOAD GLACIER INVENTORY (RGI or GAO)
@@ -104,6 +104,7 @@ def main():
     for glacier_id in glacier_ids:
 
         # load glacier outline
+        # todo: cache glacier outline
         glacier_outline = shp.load_shp(
             file_path=str(glacinv_filepath),
             id_attribute_name=id_attr,
@@ -123,12 +124,12 @@ def main():
             input_path=icesat_filepath,
             spatial_extent=spatial_extent,
             glacier_outline=glacier_outline,
-            output_path=Path(f"cache/{glacier_name}-clipped_{icesat_product}_{glacier_inventory}.nc"))
+            output_path=Path(f"cache/{glacier_name}-clipped_{icesat_product}_{glacier_inventory}.nc")) # Scheelebreen-clipped_ATL08_RGI.nc
 
         dem_subset_path = dems.load_dem(
             input_path=dem_mosaic_path[0],
             spatial_extent=spatial_extent,
-            label=f'{glacier_name}_{glacier_inventory}')
+            label=f'{glacier_name}_{glacier_inventory}')  # Scheelebreen_RGI
 
         dem_masked_path= dems.mask_dem(
             dem_subset_path,
@@ -140,7 +141,7 @@ def main():
             dem_path=dem_subset_path,
             icesat_path=icesat_subset_path,
             glacier_outline=glacier_outline,
-            output_path=Path(f"cache/{glacier_name}-dh_{glacier_inventory}.nc")
+            output_path=Path(f"cache/{glacier_name}-dh-{icesat_product}-{glacier_inventory}.nc")
         )
 
         bins = analysis.create_bins(icesat_dh_path)
@@ -157,7 +158,7 @@ def main():
             glacier_id=glacier_id,
             glacier_name=glacier_name,
             glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
-            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}.png')
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}-{icesat_product}.png')
         )
 
         plotting.plot_yearly_dh(
@@ -165,10 +166,12 @@ def main():
             glacier_outline=glacier_outline,
             glacier_name=glacier_name,
             glacier_id=glacier_id,
-            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}.png')
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png')
         )
 
         print(f'{glacier_name} analysis without errors.')
+
+        break
 
         # -------------------------------------------------------------
         # VALIDATION OF RESULTS
