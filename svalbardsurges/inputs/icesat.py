@@ -59,6 +59,8 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
     Path to the subset of IS2 dataset within the given glacier area.
     """
 
+    print('subsetting icesat')
+
     # if subset already exists return path
     if output_path.is_file():
         return output_path
@@ -77,14 +79,19 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
         (data.easting > spatial_extent["left"]) & (data.easting < spatial_extent["right"]) & (data.northing > spatial_extent["bottom"]) & (
                     data.northing < spatial_extent["top"]), drop=True)
 
-    # if subset not empty then run the code
-    # todo: what to do if dataset is empty
-    if subset.isnull() == False:
+    print('subset to bbox, now clipping to glacier extent')
 
-        # clip data to glacier outline (shapefile)
-        points = gpd.points_from_xy(x=subset.easting, y=subset.northing)  # create geometry from ICESat-2 points
-        inlier_mask = points.within(glacier_outline.iloc[0].geometry)  # points within shapefile
-        subset = subset.where(xr.DataArray(inlier_mask, coords=subset.coords), drop=True) # subset xarray dataset
+    # if subset is empty all the analysis, plotting and validation will be set to False in main.py
+    if subset.isnull():
+        return 'empty'
+
+    # clip data to glacier outline (shapefile)
+    points = gpd.points_from_xy(x=subset.easting, y=subset.northing)  # create geometry from ICESat-2 points
+    inlier_mask = points.within(glacier_outline.iloc[0].geometry)  # points within shapefile
+    subset = subset.where(xr.DataArray(inlier_mask, coords=subset.coords), drop=True) # subset xarray dataset
+
+    if subset.isnull():
+        return 'subset is empty'
 
         # save file
         output_path.parent.mkdir(exist_ok = True)
