@@ -140,6 +140,7 @@ def hypso_dem(dems, bins, ref_dem):
         # hypsometric binning
         hypso[year] = xdem.volume.hypsometric_binning(ddem=d_dem.data, ref_dem=ref_dem.data, kind='custom', bins=bins)
 
+    print('ransac done')
     return hypso
 
 def ransac(icesat_path):
@@ -150,7 +151,7 @@ def ransac(icesat_path):
     # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
     # and based on that determine the thresholds
     high_threshold = 500
-    low_threshold = 250
+    low_threshold = 200
 
     # group data by elevation
     icesat_high = data.where(data.h > high_threshold, drop=True)
@@ -160,7 +161,6 @@ def ransac(icesat_path):
     # do RANSAC on high
     # x-axis = time, y-axis = dh
     from sklearn import datasets, linear_model
-
     for data in [icesat_high, icesat_low]:
         # Prepare data
         data['date_str'] = data.date.values.astype(str)
@@ -205,6 +205,7 @@ def ransac(icesat_path):
             label="RANSAC regressor",
         )
         plt.legend(loc="lower right")
+        plt.title(data)
         plt.xlabel("Input")
         plt.ylabel("Response")
         plt.show()

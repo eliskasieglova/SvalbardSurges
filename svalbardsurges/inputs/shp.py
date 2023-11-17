@@ -40,7 +40,8 @@ def load_shp(file_path, id_attribute_name, glacier_id):
     Returns .shp of selected glacier.
     """
 
-    output_file = Path(f'cache/shapefiles/{glacier_id}.shp')
+    filepath = Path(file_path)
+    output_file = Path(f'cache/shapefiles/{filepath.stem}_{glacier_id}.shp')
 
     # if glacier outline is cached simply load the shapefile
     if output_file.is_file():
@@ -52,8 +53,12 @@ def load_shp(file_path, id_attribute_name, glacier_id):
     # load glacier area outlines converted to EPSG:32633
     shp = gpd.read_file(file_path).to_crs(32633)
 
-    # subset by chosen glacier ID
-    glacier_outline = shp.query(f"{id_attribute_name}=='{glacier_id}'")
+    # subset by chosen glacier ID (different for gao and rgi because of different id attribute format: str vs. float)
+    if filepath.stem == 'gao':
+        glacier_outline = shp.query(f"{id_attribute_name}=={glacier_id}")
+
+    elif filepath.stem == 'rgi':
+        glacier_outline = shp.query(f"{id_attribute_name}=='{glacier_id}'")
 
     # save as shp
     glacier_outline.to_file(filename=output_file)

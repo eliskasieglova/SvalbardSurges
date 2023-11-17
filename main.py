@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 import socket
+import pandas as pd
+import xarray as xr
+from matplotlib import pyplot as plt
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -27,18 +30,20 @@ def main():
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
 
     # Glacier Outlines
-    glacier_inventory = 'rgi' # or 'gao'. will assign download url and filenames accordingly
+    glacier_inventory = 'gao' # 'rgi' or 'gao'. will assign download url and filenames accordingly
 
     # ------------------------------------------------------------------------
     # CHOOSE ALGORITHMS
-    # choose which parts of code will be run and which not
-    # True = will be run, False = will not be run
+    # choose which parts of code will be run and which not (True = will be run, False = will not be run)
     # ------------------------------------------------------------------------
 
-    hypso = False # hypsometric binning
-    ransac = False
+    hypso = True # hypsometric binning
+    ransac = True
     validate = False # validation of dh from icesat compared to arcticdem
-    plot = False # plotting of results
+    pltshow = True # plotting of results
+    dataset = 'testing' # 'testing' or 'forreal' for downloading data from earthdata
+    if dataset == 'testing':
+        icesat_filepath = Path('nordenskiold_land-is2.nc')
 
     # ------------------------------------------------------------------------
     # CREATE DIRECTORIES
@@ -61,27 +66,24 @@ def main():
     # --------------------------------------------------------
 
     # before anything else im gonna now plot various atl03 and atl08 data
-    import xarray as xr
-    from matplotlib import pyplot as plt
     # open dataset
-    ds = xr.open_dataset('cache/Scheelebreen-clipped_ATL08_rgi.nc')
+    #ds = xr.open_dataset('data/icesat_ATL08.nc')
 
-    # select cycle
-    #ds1 = ds.where(ds['cycle'] == 18)
-    #ds1 = ds1.where(ds1['beam'] == 1)
-    #ds1 = ds1.where(ds1['RGT'] == 8)
+    # convert datatype to int (yyyymmdd)
+    #ds['date_str'] = ds.date.values.astype(str)
+    #ds['date_int'] = [int(x[:10].replace('-', '')) for x in ds.date_str.values]
 
-    # plot
-    #plt.scatter(ds.latitude, ds.h, marker='.', c='yellow', s=1)
-    #plt.scatter(ds.latitude, ds.dem_h, marker='.', c='black', s=1)
+    #hydrosilvestr = 20181031
 
-    #plt.scatter(ds1.latitude, ds1.dem_h, c='yellow')
+    #if plot == True:
+    #    for year in range(5):
+    #        subset = ds.where((ds.date_int.values > hydrosilvestr) & (ds.date_int.values <= hydrosilvestr+1000))
+            # plot
+    #        plt.scatter(subset.longitude, subset.latitude, marker='.', s=0.1)
+    #        plt.title(hydrosilvestr)
+    #        plt.show()
 
-    #plt.scatter(ds1.longitude, ds1.latitude)
-
-
-    #plt.show()
-
+    #        hydrosilvestr = hydrosilvestr + 10000
 
     # DOWNLOAD ICESAT-2
     # using icepyx. data product is selected at beginning of code.
@@ -100,10 +102,12 @@ def main():
     # DOWNLOAD GLACIER INVENTORY (RGI or GAO)
     # variables for chosen inventory
     if glacier_inventory == 'rgi':
-        glacinv_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/3df9512e5a73841b1a23c38cf4e815e3'
+        glacinv_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/' \
+                      '3df9512e5a73841b1a23c38cf4e815e3'
         glacinv_filepath = Path('data/rgi.zip')
     if glacier_inventory == 'gao':
-        glacinv_url = 'https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0770_rgi_v7/regional_files/RGI2000-v7.0-G/RGI2000-v7.0-G-07_svalbard_jan_mayen.zip'
+        glacinv_url = 'https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0770_rgi_v7/regional_files/' \
+                      'RGI2000-v7.0-G/RGI2000-v7.0-G-07_svalbard_jan_mayen.zip'
         glacinv_filepath = Path('data/gao.zip')
 
     # download glacier inventory, function from Erik
@@ -118,9 +122,8 @@ def main():
     # list of glacier IDs based on selected inventory
     if glacier_inventory == 'gao':
         glacier_ids = [
-            13410,
-            13218.1,
-            13406.1
+            13406.1,
+            13218.1
         ]
     if glacier_inventory == 'rgi':
         glacier_ids = [
@@ -143,6 +146,10 @@ def main():
     # START OF ACTUAL CODE
     # --------------------------------------------------------------------
 
+    # empty pd dataframe where the results of the analyses will go
+    #df = pd.DataFrame(index=len(glacier_ids), columns=["glacier_id", "name", "hypso", "ransac", "sum"])
+    #df.fillna(-1)
+
     for glacier_id in glacier_ids:
 
         # load glacier outline
@@ -151,7 +158,11 @@ def main():
             id_attribute_name=id_attr,
             glacier_id=glacier_id)
 
-        glacier_name = glacier_outline.glac_name.iloc[0]
+        if glacier_inventory == 'rgi':
+            glacier_name = glacier_outline.glac_name.iloc[0]
+
+        elif glacier_inventory == 'gao':
+            glacier_name = glacier_outline.NAME.iloc[0]
 
         print(f'loaded {glacier_name}')
 
@@ -179,7 +190,7 @@ def main():
             hypso = False
             ransac = False
             validate = False
-            plot = False
+            pltshow = False
 
         dem_subset_path = dems.load_dem(
             input_path=dem_mosaic_path[0],
@@ -189,7 +200,9 @@ def main():
         dem_masked_path= dems.mask_dem(
             dem_subset_path,
             glacier_outline,
-            label=f'{glacier_name}_{glacier_inventory}')
+            label=f'{glacier_name}_{glacier_inventory}',
+            pltshow=pltshow
+            )
 
         print('created dem subset')
 
@@ -204,7 +217,7 @@ def main():
 
             print('added dh to dataset')
 
-        if plot == True:
+        if pltshow == True:
             plotting.plot_yearly_dh(
                 data_path=icesat_dh_path,
                 glacier_outline=glacier_outline,
@@ -213,11 +226,7 @@ def main():
                 output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png')
             )
 
-
-        # todo: create empty pd dataframe where the results of the analyses will go
-
         # ANALYSIS
-
         if hypso == True:
 
             # hypsometric binning of glacier
@@ -229,7 +238,7 @@ def main():
 
             print('hypsometric binning DONE')
 
-            if plot == True:
+            if pltshow == True:
                 # plot hypsometric curves and yearly dh for glacier
                 plotting.plot_hypso_is2(
                     data=icesat_hypso,

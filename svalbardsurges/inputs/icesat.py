@@ -9,6 +9,7 @@ import statistics as stat
 from datetime import datetime
 import socket
 import os
+from pathlib import Path
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -68,11 +69,14 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
     # load data
     data = xr.open_dataset(input_path, decode_coords=False)
 
-    #from matplotlib import pyplot as plt
-    #plt.scatter(data.easting, data.northing)
-    #plt.plot([spatial_extent['left'], spatial_extent['right'], spatial_extent['right'], spatial_extent['left']],
-    #         [spatial_extent['bottom'], spatial_extent['bottom'], spatial_extent['top'], spatial_extent['top']])
-    #plt.show()
+    if input_path == Path('nordenskiold_land-is2.nc'):
+        data['h'] = data['h_te_best_fit']
+
+    #    from matplotlib import pyplot as plt
+    #    plt.scatter(data.easting, data.northing)
+    #    plt.plot([spatial_extent['left'], spatial_extent['right'], spatial_extent['right'], spatial_extent['left']],
+    #             [spatial_extent['bottom'], spatial_extent['bottom'], spatial_extent['top'], spatial_extent['top']])
+    #    plt.show()
 
     # clip data to bounding box
     subset = data.where(
@@ -82,20 +86,20 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
     print('subset to bbox, now clipping to glacier extent')
 
     # if subset is empty all the analysis, plotting and validation will be set to False in main.py
-    if subset.isnull():
-        return 'empty'
+    #if subset.isnull() == True:
+    #    return 'empty'
 
     # clip data to glacier outline (shapefile)
     points = gpd.points_from_xy(x=subset.easting, y=subset.northing)  # create geometry from ICESat-2 points
     inlier_mask = points.within(glacier_outline.iloc[0].geometry)  # points within shapefile
     subset = subset.where(xr.DataArray(inlier_mask, coords=subset.coords), drop=True) # subset xarray dataset
 
-    if subset.isnull():
-        return 'subset is empty'
+    #if subset.isnull():
+    #    return 'empty'
 
         # save file
-        output_path.parent.mkdir(exist_ok = True)
-        subset.to_netcdf(output_path)
+    output_path.parent.mkdir(exist_ok = True)
+    subset.to_netcdf(output_path)
 
     return output_path
 
@@ -240,6 +244,7 @@ def ATL08_to_dict(filename, dataset_dict):
                     temp['cycle'] = np.zeros_like(temp['h_te_best_fit']) + int(fs[-3][4:6])
 
                     # append date
+                    # todo: convert date to int as well in the format yyyymmdd (will be helpful later)
                     temp['date'] = np.zeros_like(temp['h_te_best_fit']).astype('datetime64[ns]')
                     temp['date'][temp['date'] != 'abc'] = datetime.strptime(
                         np.array(h5f['ancillary_data/data_start_utc'])[0].decode('UTF-8'), '%Y-%m-%dT%H:%M:%S.%fZ')

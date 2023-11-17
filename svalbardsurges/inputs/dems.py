@@ -51,7 +51,7 @@ def load_dem(input_path, spatial_extent, label):
 
     return vrt_cropped_filepath
 
-def mask_dem(dem_path, glacier_outline, label) -> Path:
+def mask_dem(dem_path, glacier_outline, label, pltshow) -> Path:
     """
     Masks DEM data by the glacier area outlines.
 
@@ -80,6 +80,10 @@ def mask_dem(dem_path, glacier_outline, label) -> Path:
     # extract values inside the glacier area outlines
     dem.load()
     dem.set_mask(~gao_rasterized)
+
+    if pltshow == True:
+        dem.show()
+        plt.show()
 
     dem.save(str(path))
 
