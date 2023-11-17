@@ -27,8 +27,8 @@ def plot_hypso_is2(data, glacier_id, glacier_name, glacier_area, output_path):
      Saved figure of hypsometric curves and histograms for each year in dataset.
     """
 
-    if output_path.is_file():
-        return
+    #if output_path.is_file():
+    #    return
 
     # initialize subplots and n value for visualization
     plt.subplots(2, 3, sharey=True, sharex=True)
@@ -57,6 +57,7 @@ def plot_hypso_is2(data, glacier_id, glacier_name, glacier_area, output_path):
         n = n + 1
 
     plt.tight_layout()
+    plt.show()
 
     # save figure
     plt.savefig(output_path)
@@ -85,6 +86,8 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
     Saves figure of plotted yearly elevation differences.
     """
 
+    # todo: adapt to hydrological years
+    return
     #if output_path.is_file():
     #    return
 
@@ -96,7 +99,14 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
 
     n = 1
 
-    for year, data_subset in data.groupby(data["date"].dt.year):
+    day = 1031
+    years = [2018, 2019, 2020, 2021, 2022]
+
+    for year in years:
+        y = year * 10000
+        hydrosilvestr = y + day
+
+        subset = data.where(())
 
         plt.subplot(1, 5, n)
         plt.title(f"2010 - {year}")

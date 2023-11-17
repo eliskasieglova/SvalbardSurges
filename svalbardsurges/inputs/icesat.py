@@ -97,6 +97,11 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
     #if subset.isnull():
     #    return 'empty'
 
+    # save date in int format as variable
+    subset['date_str'] = ('index', subset.date.values.astype(str))
+    subset['date_int'] = ('index', [int(x[:10].replace('-', '')) for x in subset.date_str.values])
+    subset['year_int'] = ('index', [int(x[:4]) for x in subset.date_str.values])
+
         # save file
     output_path.parent.mkdir(exist_ok = True)
     subset.to_netcdf(output_path)
@@ -466,6 +471,7 @@ def ATL06_to_gdf(dataset_path, dataset_dict):
 
     return pd_final
 
+
 def ATL06_to_xr(input_path, output_path):
     """
     function putting together the process of converting ATL08 hdf5 data to an xarray dataset
@@ -505,6 +511,8 @@ def ATL06_to_xr(input_path, output_path):
 #                               ATL03
 # ----------------------------------------------------------------
 # adapted for ATL03 by Desiree
+
+
 def ATL03_to_dict(filename, dataset_dict=False, utmzone=False):
     """
         Read selected datasets from an ATL03 file
@@ -600,6 +608,7 @@ def ATL03_to_dict(filename, dataset_dict=False, utmzone=False):
                     D3.append(temp)
     return D3
 
+
 def ATL03_to_utm(temp, utmzone):
     if utmzone[-1] == 'N':
         northsouth = 'north'
@@ -613,6 +622,7 @@ def ATL03_to_utm(temp, utmzone):
     utmx, utmy = myProj(temp['lon_ph'], temp['lat_ph'])  # to convert back, add argument: , inverse=True
 
     return utmx, utmy
+
 
 def get_ATL03_x_atc(h5f, pair, beam, temp):
     # calculate the along-track and across-track coordinates for ATL03 photons
@@ -676,6 +686,7 @@ def get_ATL03_x_atc(h5f, pair, beam, temp):
         y_atc[idx:idx + cnt] = distance_along_Y
 
     return x_atc, y_atc
+
 
 def ATL03_to_gdf(ATL03_fn, dataset_dict=False, aoicoords=False, filterbackground=False, utmzone=False, v=False):
     """
@@ -760,6 +771,7 @@ def ATL03_to_gdf(ATL03_fn, dataset_dict=False, aoicoords=False, filterbackground
 
     return gdf_final
 
+
 def ATL03_to_xr(input_path, output_path):
     """
     function putting together the process of converting ATL08 hdf5 data to an xarray dataset
@@ -793,3 +805,27 @@ def ATL03_to_xr(input_path, output_path):
     concat_xr(gdf_list, 'ATL03')
 
     return output_path
+
+
+def groupby_hydroyear(data, year, splitday):
+    """
+    Creates a subset of ICESat-2 data (xarray) based on split date (defaults to hydrological year).
+
+    Params
+    ------
+    - data
+        xarray dataset
+    - year
+        int, format yyyy
+    - splitday
+        day at which i want to split year, int, format mmdd (defaults to 1031 = october 31st, hydrological new year)
+
+    Returns
+    -------
+    Subset of former dataset split by hydrological year (if splitday == 1031)
+    """
+    hydrosilvestr = year * 10000 + splitday
+    subset = data.where((data.date_int.values > hydrosilvestr) & (data.date_int.values <= hydrosilvestr + 10000))
+    subset = subset.dropna('index')
+
+    return subset

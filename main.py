@@ -37,13 +37,19 @@ def main():
     # choose which parts of code will be run and which not (True = will be run, False = will not be run)
     # ------------------------------------------------------------------------
 
-    hypso = True # hypsometric binning
+    hypso = False # hypsometric binning
     ransac = True
     validate = False # validation of dh from icesat compared to arcticdem
     pltshow = True # plotting of results
+    # todo: action with plots - save or show?
     dataset = 'testing' # 'testing' or 'forreal' for downloading data from earthdata
     if dataset == 'testing':
         icesat_filepath = Path('nordenskiold_land-is2.nc')
+
+    # todo: create a pd dataframe that will be used for storing all the necessary info for the output and plotting
+    # do it for each year - is there a surge or not?
+    # --> id, name, surge or not surge, ransac values for each year, icesat dataset with dh for plotting,
+    #     geometry for plotting
 
     # ------------------------------------------------------------------------
     # CREATE DIRECTORIES
@@ -227,7 +233,7 @@ def main():
             )
 
         # ANALYSIS
-        if hypso == True:
+        if hypso:
 
             # hypsometric binning of glacier
             bins = analysis.create_bins(icesat_dh_path)
@@ -238,7 +244,7 @@ def main():
 
             print('hypsometric binning DONE')
 
-            if pltshow == True:
+            if pltshow:
                 # plot hypsometric curves and yearly dh for glacier
                 plotting.plot_hypso_is2(
                     data=icesat_hypso,
@@ -250,16 +256,15 @@ def main():
 
             print(f'{glacier_name} analysis without errors.')
 
-        if ransac == True:
+        # todo: run ransac for group by year
+        if ransac:
             analysis.ransac(icesat_dh_path)
-
-
 
         # -------------------------------------------------------------
         # VALIDATION OF RESULTS
         # with arcticdem
         # -------------------------------------------------------------
-        if validate == True:
+        if validate:
             # path to ArcticDEM directory
             arcticDEM_dir = Path('arcticdem/')
             arcticDEMs = {}
@@ -289,7 +294,7 @@ def main():
 
             print(f'{glacier_name} validation without errors.')
 
-            if plot == True:
+            if pltshow == True:
                 # plot hypso curves
                 plotting.plot_hypso_arcticdem(
                     data=arcticDEM_hypso,
@@ -299,7 +304,7 @@ def main():
                     output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso_{glacier_inventory}.png')
                 )
 
-            if plot == True:
+            if pltshow == True:
                 # plot elevation differences
                 for year in arcticDEMs:
                     if year != '2022':

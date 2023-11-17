@@ -3,7 +3,6 @@ import numpy as np
 import warnings
 import rasterio as rio
 from matplotlib import pyplot as plt
-
 from sklearn import datasets, linear_model
 
 # Catch a deprecation warning that arises from skgstat when importing xDEM
@@ -11,6 +10,8 @@ with warnings.catch_warnings():
     import numba
     warnings.simplefilter("ignore", numba.NumbaDeprecationWarning)
     import xdem
+
+from svalbardsurges.inputs import icesat
 
 def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     """
@@ -84,19 +85,38 @@ def hypso_is2(input_path, bins):
     # empty dictionary to append binned elevation differences by year
     hypso_bins = {}
 
-    for year, data_subset in data.groupby(data["date"].dt.year):
-        # todo: group the data by hydrological years
-        # create hypsometric bins
-        hypso_subset = xdem.volume.hypsometric_binning(
-            ddem=data_subset['dh'],
-            ref_dem=data_subset['dem_elevation'],
-            kind="custom",
-            bins=bins,
-            aggregation_function=np.nanmean
-        )
+    years = np.unique(data.year_int.values)
+
+    for year in years:
+        if year != years[-1]:
+            y = year * 10000
+            hydrosilvestr = y + 1031  # create hydrosilvestr, for example 20181031 (october 31st 2018)
+            subset = data.where((data.date_int.values > hydrosilvestr) & (data.date_int.values <= hydrosilvestr+10000))
+
+            hypso = xdem.volume.hypsometric_binning(
+                ddem=subset['dh'],
+                ref_dem=subset['dem_elevation'],
+                kind="custom",
+                bins=bins,
+                aggregation_function=np.nanmean
+            )
+
+            # append data to dictionary
+            hypso_bins[year] = hypso
+
+    #for year, data_subset in data.groupby(data["date"].dt.year):
+    #    # todo: group the data by hydrological years
+    #    # create hypsometric bins
+    #    hypso_subset = xdem.volume.hypsometric_binning(
+    #        ddem=data_subset['dh'],
+    #        ref_dem=data_subset['dem_elevation'],
+    #        kind="custom",
+    #        bins=bins,
+    #        aggregation_function=np.nanmean
+    #    )
 
         # append data to dictionary
-        hypso_bins[year] = hypso_subset
+        #hypso_bins[year] = hypso
 
     return hypso_bins
 
@@ -143,7 +163,80 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
+def ransac1(icesat_path):
+
+
+    # split data into subsets by elevation (top of glacier/terminus)
+    # todo: a better way to split based on statistics and stuff
+    icesat_high = data.where(data.h > high_threshold, drop=True)
+    icesat_low = data.where(data.h < low_threshold, drop=True)
+    #icesat_mid = data.where(data.h < high_threshold & data.h > low_threshold)
+
+    # do RANSAC on high
+    # x-axis = time, y-axis = dh
+    l = [icesat_high, icesat_low]
+    years = np.unique(data.year_int.values)
+    for year in years:
+        for i in range(1):
+            data = l[i]
+            if year != years[-1]:
+                data = icesat.groupby_hydroyear(data, year, 1031)
+
+                # based on tutorial from scikit.learn
+                X = data.date_int.values.reshape(-1, 1) # reshape arrays
+                y = data.dh.values.reshape(-1, 1)
+
+                # Fit line using all data
+                lr = linear_model.LinearRegression()
+                lr.fit(X, y)
+
+                # Robustly fit data with ransac algorithm
+                ransac = linear_model.RANSACRegressor()
+                ransac.fit(X, y)
+                inlier_mask = ransac.inlier_mask_
+                outlier_mask = np.logical_not(inlier_mask)
+
+                # Predict data of estimated models
+                line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+                line_y = lr.predict(line_X)
+                line_y_ransac = ransac.predict(line_X)
+
+                # Compare estimated coefficients
+                #print("Estimated coefficients (true, linear regression, RANSAC):")
+                #print(coef, lr.coef_, ransac.estimator_.coef_)
+
+                # plot
+                lw = 2
+                plt.scatter(
+                    X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers"
+                )
+                plt.scatter(
+                    X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers"
+                )
+                plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
+                plt.plot(
+                    line_X,
+                    line_y_ransac,
+                    color="cornflowerblue",
+                    linewidth=lw,
+                    label="RANSAC regressor",
+                )
+                plt.legend(loc="lower right")
+                if i == 0:
+                    plt.title(f'elevation above {high_threshold}')
+
+                elif i == 1:
+                    plt.title(f'elevation below {low_threshold}')
+
+                plt.xlabel("Input")
+                plt.ylabel("Response")
+                plt.show()
+
+    # todo: return coefficients
+    return
+
 def ransac(icesat_path):
+    # todo: add pd dataframe as input and output
 
     # load data
     data = xr.load_dataset(icesat_path)
@@ -153,62 +246,8 @@ def ransac(icesat_path):
     high_threshold = 500
     low_threshold = 200
 
-    # group data by elevation
-    icesat_high = data.where(data.h > high_threshold, drop=True)
-    icesat_low = data.where(data.h < low_threshold, drop=True)
-    #icesat_mid = data.where(data.h < high_threshold & data.h > low_threshold)
-
-    # do RANSAC on high
-    # x-axis = time, y-axis = dh
-    from sklearn import datasets, linear_model
-    for data in [icesat_high, icesat_low]:
-        # Prepare data
-        data['date_str'] = data.date.values.astype(str)
-        data['date_int'] = [int(x[:10].replace('-', '')) for x in data.date_str.values] # convert datetime to int
-
-        X = data.date_int.values.reshape(-1, 1) # reshape arrays
-        y = data.dh.values.reshape(-1, 1)
-
-        # Fit line using all data
-        lr = linear_model.LinearRegression()
-        lr.fit(X, y)
-
-        # Robustly fit data with ransac algorithm
-        ransac = linear_model.RANSACRegressor()
-        ransac.fit(X, y)
-        inlier_mask = ransac.inlier_mask_
-        outlier_mask = np.logical_not(inlier_mask)
-
-        # Predict data of estimated models
-        line_X = np.arange(X.min(), X.max())[:, np.newaxis]
-        line_y = lr.predict(line_X)
-        line_y_ransac = ransac.predict(line_X)
-
-        # Compare estimated coefficients
-        #print("Estimated coefficients (true, linear regression, RANSAC):")
-        #print(coef, lr.coef_, ransac.estimator_.coef_)
-
-        # plot
-        lw = 2
-        plt.scatter(
-            X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers"
-        )
-        plt.scatter(
-            X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers"
-        )
-        plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
-        plt.plot(
-            line_X,
-            line_y_ransac,
-            color="cornflowerblue",
-            linewidth=lw,
-            label="RANSAC regressor",
-        )
-        plt.legend(loc="lower right")
-        plt.title(data)
-        plt.xlabel("Input")
-        plt.ylabel("Response")
-        plt.show()
-
+    # split the data for each year
+    # loop through the years and do ransac both for high and low elevation
 
     return
+
