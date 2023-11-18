@@ -29,29 +29,30 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     ICESat-2 dataset with the additional values of "dem_elevation" (retained values of reference DEM)
     and "dh" (difference between ICESat-2 and reference DEM)
     """
+    # todo do it for all the beams
 
     # if subset already exists return path
     if output_path.is_file():
         return output_path
 
-    icesat = xr.open_dataset(icesat_path)
+    data = xr.open_dataset(icesat_path)
 
     with rio.open(dem_path) as raster, warnings.catch_warnings():
         warnings.filterwarnings('ignore', message='.*converting a masked element to nan.*')
-        icesat["dem_elevation"] = "index", np.fromiter(
+        data["dem_elevation"] = "index", np.fromiter(
             raster.sample(
-                np.transpose([icesat.easting.values, icesat.northing.values]),
+                np.transpose([data.easting.values, data.northing.values]),
                 masked=True
             ),
             dtype=raster.dtypes[0],
-            count=icesat.easting.shape[0]
+            count=data.easting.shape[0]
         )
 
-    # subtract ICESat-2 elevation from DEM elevation (with elevation correction)
-    icesat["dh"] = icesat["h"] - icesat["dem_elevation"] - 31.55
+    # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
+    data["dh"] = data["h"] - data["dem_elevation"] - 31.55
 
     # save as netcdf file
-    icesat.to_netcdf(output_path)
+    data.to_netcdf(output_path)
 
     return output_path
 
@@ -163,91 +164,121 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
-def ransac1(icesat_path):
+def ransac_alg(data, thresholds):
+    """
+
+    Params
+    ------
+    - data
+        xarray
+    - thresholds
+        list containing two values: [low threshold, high threshold]
+
+    """
+    # split data between thresholds
+    icesat_high = data.where(data.h > thresholds[1], drop=True)
+    icesat_mid = data.where((data.h > thresholds[0]) & (data.h < thresholds[1]), drop=True)
+    icesat_low = data.where(data.h < thresholds[0], drop=True)
+
+    datasets = [icesat_high, icesat_mid, icesat_low]
+
+    year = max(data.year_int.values)
+    # create with subplots and title
+    plt.subplots(1, 3, sharey=True)
+    #plt.xticks([20180000, 20220000])
+    plt.suptitle(f'{str(year-1)[:4]}-{str(year)[:4]}')
+    lw = 2
+
+    coefficients = []
+
+    i = 1
+    for data in datasets:
+        # RANSAC algorithm taken from scikit.learn documentation
+        # x-axis = time, y-axis = dh
+        # so what we are comparing is not differences between years but differences between given year and 2010 (DEM)
+
+        # reshape arrays
+        X = data.h.values.reshape(-1, 1)
+        y = data.dh.values.reshape(-1, 1)
+
+        # Fit line using all data
+        #lr = linear_model.LinearRegression()
+        #lr.fit(X, y)
+
+        # Robustly fit data with ransac algorithm
+        # todo: try except for not enough samples (n_samples = 1)
+        ransac = linear_model.RANSACRegressor(max_trials=100)
+        ransac.fit(X, y)
+        inlier_mask = ransac.inlier_mask_
+        outlier_mask = np.logical_not(inlier_mask)
+
+        # Predict data of estimated models
+        line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+        #line_y = lr.predict(line_X)
+        line_y_ransac = ransac.predict(line_X)
+
+        # Compare estimated coefficients
+        #print("Estimated coefficients (true, linear regression, RANSAC):")
+        #print(coef, lr.coef_, ransac.estimator_.coef_)
 
 
-    # split data into subsets by elevation (top of glacier/terminus)
-    # todo: a better way to split based on statistics and stuff
-    icesat_high = data.where(data.h > high_threshold, drop=True)
-    icesat_low = data.where(data.h < low_threshold, drop=True)
-    #icesat_mid = data.where(data.h < high_threshold & data.h > low_threshold)
+        # PLOT based on if it's high or low
+        plt.subplot(1, 3, i)
+        plt.scatter(
+            X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers"
+        )
+        plt.scatter(
+            X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers"
+        )
+        #plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
+        plt.plot(
+            line_X,
+            line_y_ransac,
+            color="cornflowerblue",
+            linewidth=lw,
+            label="RANSAC regressor",
+        )
 
-    # do RANSAC on high
-    # x-axis = time, y-axis = dh
-    l = [icesat_high, icesat_low]
-    years = np.unique(data.year_int.values)
-    for year in years:
-        for i in range(1):
-            data = l[i]
-            if year != years[-1]:
-                data = icesat.groupby_hydroyear(data, year, 1031)
+        if i == 1:
+            t = f'>{thresholds[1]}m'
 
-                # based on tutorial from scikit.learn
-                X = data.date_int.values.reshape(-1, 1) # reshape arrays
-                y = data.dh.values.reshape(-1, 1)
+        elif i == 2:
+            t = f'{thresholds[0]}-{thresholds[1]}m'
 
-                # Fit line using all data
-                lr = linear_model.LinearRegression()
-                lr.fit(X, y)
+        elif i == 3:
+            t = f'<{thresholds[0]}m'
 
-                # Robustly fit data with ransac algorithm
-                ransac = linear_model.RANSACRegressor()
-                ransac.fit(X, y)
-                inlier_mask = ransac.inlier_mask_
-                outlier_mask = np.logical_not(inlier_mask)
+        ransac_coef = ransac.estimator_.coef_[0][0]
+        plt.title(f'{t}\n{str(ransac_coef)[:5]}')
+        plt.xlabel("Input")
+        plt.ylabel("Response")
 
-                # Predict data of estimated models
-                line_X = np.arange(X.min(), X.max())[:, np.newaxis]
-                line_y = lr.predict(line_X)
-                line_y_ransac = ransac.predict(line_X)
+        coefficients.append(ransac_coef)
+        i = i + 1
 
-                # Compare estimated coefficients
-                #print("Estimated coefficients (true, linear regression, RANSAC):")
-                #print(coef, lr.coef_, ransac.estimator_.coef_)
+    #plt.legend(loc="lower right")
+    plt.show()
 
-                # plot
-                lw = 2
-                plt.scatter(
-                    X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers"
-                )
-                plt.scatter(
-                    X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers"
-                )
-                plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
-                plt.plot(
-                    line_X,
-                    line_y_ransac,
-                    color="cornflowerblue",
-                    linewidth=lw,
-                    label="RANSAC regressor",
-                )
-                plt.legend(loc="lower right")
-                if i == 0:
-                    plt.title(f'elevation above {high_threshold}')
-
-                elif i == 1:
-                    plt.title(f'elevation below {low_threshold}')
-
-                plt.xlabel("Input")
-                plt.ylabel("Response")
-                plt.show()
-
-    # todo: return coefficients
-    return
+    return ransac_coef
 
 def ransac(icesat_path):
     # todo: add pd dataframe as input and output
+    # to store the ransac coefficients
 
     # load data
     data = xr.load_dataset(icesat_path)
 
+    # todo: a better way to split based on statistics and stuff
     # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
     # and based on that determine the thresholds
-    high_threshold = 500
-    low_threshold = 200
+    thresholds = [200, 500]
 
-    # split the data for each year
     # loop through the years and do ransac both for high and low elevation
+    years = np.unique(data.year_int.values)
+    for year in years:
+        if (year != years[-1]): # | (year != years[0]):
+            subset = icesat.groupby_hydroyear(data, year)
+            ransac_alg(subset, thresholds)
 
     return
 

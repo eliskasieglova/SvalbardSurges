@@ -1,9 +1,6 @@
 import os
 from pathlib import Path
 import socket
-import pandas as pd
-import xarray as xr
-from matplotlib import pyplot as plt
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -16,6 +13,8 @@ from svalbardsurges import build_dem
 from svalbardsurges.inputs import dems
 from svalbardsurges.inputs import shp
 from svalbardsurges.inputs import icesat
+from svalbardsurges.inputs import read_icesat
+
 
 def main():
 
@@ -42,14 +41,13 @@ def main():
     validate = False # validation of dh from icesat compared to arcticdem
     pltshow = True # plotting of results
     # todo: action with plots - save or show?
-    dataset = 'testing' # 'testing' or 'forreal' for downloading data from earthdata
-    if dataset == 'testing':
+    testdata = True
+    if testdata:
         icesat_filepath = Path('nordenskiold_land-is2.nc')
 
     # todo: create a pd dataframe that will be used for storing all the necessary info for the output and plotting
-    # do it for each year - is there a surge or not?
-    # --> id, name, surge or not surge, ransac values for each year, icesat dataset with dh for plotting,
-    #     geometry for plotting
+
+    results = {}
 
     # ------------------------------------------------------------------------
     # CREATE DIRECTORIES
@@ -100,7 +98,7 @@ def main():
     )
 
     # save as netcdf
-    icesat.read_icesat(icesat_product, icesat_filepath)
+    read_icesat.read(icesat_product, icesat_filepath)
 
     # BUILD DEM MOSAIC from NPI (function from Erik)
     dem_mosaic_path = build_dem.build_npi_mosaic(verbose=True)
@@ -158,11 +156,40 @@ def main():
 
     for glacier_id in glacier_ids:
 
+        # create dictionary record for each individual glacier
+
+        # do it for each year - is there a surge or not?
+        # --> id, name, surge or not surge, ransac values for each year, icesat dataset with dh for plotting,
+        #     geometry for plotting
+
+        glac_results = {
+            "glac_info": {
+                "glac_id": glacier_id,
+                "glac_name": "",
+                "geom": "",
+                "path": ""
+            },
+            "data": {
+                "2018": "", # also a dictionary with easting, northing, lat, lon, dh, h, dem_h
+                "2019": "",
+                "2020": "",
+                "2021": "",
+                "2022": ""
+            },
+            "coefficients": {
+                "ransac": "",
+                "hypso": ""
+            }
+        }
+
         # load glacier outline
         glacier_outline = shp.load_shp(
             file_path=str(glacinv_filepath),
             id_attribute_name=id_attr,
             glacier_id=glacier_id)
+
+        # add geometry to dictionary
+        glac_results['glac_info']['geom'] = glacier_outline.iloc[0].geometry
 
         if glacier_inventory == 'rgi':
             glacier_name = glacier_outline.glac_name.iloc[0]
@@ -170,7 +197,8 @@ def main():
         elif glacier_inventory == 'gao':
             glacier_name = glacier_outline.NAME.iloc[0]
 
-        print(f'loaded {glacier_name}')
+        # add record of glacier name to dictionary
+        glac_results['glac_info']['glac_name'] = glacier_name
 
         # create directory for saving figures for each glacier separately
         if not os.path.isdir(f"figures/{glacier_name}"):
@@ -178,12 +206,8 @@ def main():
         if not os.path.isdir(f"figures/{glacier_name}/{glacier_inventory}"):
             os.mkdir(f"figures/{glacier_name}/{glacier_inventory}")
 
-        print('created dirs')
-
         # compute bounds of glacieroutline
         spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
-
-        print('spatial extent yep')
 
         # subset data to glacier outline
         icesat_subset_path = icesat.subset_icesat(
@@ -210,8 +234,6 @@ def main():
             pltshow=pltshow
             )
 
-        print('created dem subset')
-
         if icesat_subset_path != 'empty':
             # get elevation difference between ICESat-2 and reference DEM
             icesat_dh_path = analysis.icesat_DEM_difference(
@@ -221,7 +243,8 @@ def main():
                 output_path=Path(f"cache/{glacier_name}-dh-{icesat_product}-{glacier_inventory}.nc")
             )
 
-            print('added dh to dataset')
+        # append path to subsetted icesat-2 to dictionary
+        glac_results['glac_info']['path'] = icesat_dh_path
 
         if pltshow == True:
             plotting.plot_yearly_dh(
