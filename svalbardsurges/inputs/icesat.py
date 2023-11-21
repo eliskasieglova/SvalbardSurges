@@ -34,7 +34,7 @@ def statistics(data_path = 'nordenskiold_land-is2.nc'):
     return st
 
 
-def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
+def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path):
     """
     Subset IS2 data using specified bounds and shapefile.
 
@@ -56,8 +56,6 @@ def subset_icesat(input_path, spatial_extent, glacier_outline, output_path):
     -------
     Path to the subset of IS2 dataset within the given glacier area.
     """
-
-    print('subsetting icesat')
 
     # if subset already exists return path
     if output_path.is_file():
@@ -131,5 +129,14 @@ def groupby_hydroyear(data, year):
     # create subset of data
     subset = data.where((data.date_int.values > hydrosilvestr-10000) & (data.date_int.values <= hydrosilvestr + 10000))
     subset = subset.dropna('index')
+
+    return subset
+
+def icesatVarSubset(icesat_path):
+
+    data = xr.load_dataset(icesat_path)
+
+    subset = data.drop_vars()
+
 
     return subset

@@ -13,6 +13,7 @@ with warnings.catch_warnings():
 
 from svalbardsurges.inputs import icesat
 
+
 def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     """
     Get elevation difference between ICESat-2 data and reference DEM.
@@ -29,7 +30,6 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     ICESat-2 dataset with the additional values of "dem_elevation" (retained values of reference DEM)
     and "dh" (difference between ICESat-2 and reference DEM)
     """
-    # todo do it for all the beams
 
     # if subset already exists return path
     if output_path.is_file():
@@ -49,12 +49,13 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
         )
 
     # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
-    data["dh"] = data["h"] - data["dem_elevation"] - 31.55
+    data["dh"] = data["h"] - data["dem_elevation"] - 31.55 # todo a bit better correction
 
     # save as netcdf file
     data.to_netcdf(output_path)
 
     return output_path
+
 
 def create_bins(data_path):
 
@@ -65,7 +66,8 @@ def create_bins(data_path):
 
     return bins
 
-def hypso_is2(input_path, bins):
+
+def icesatHypso(input_path, bins, surgenosurge):
     """
     Hypsometric binning of glacier elevation changes.
 
@@ -75,7 +77,10 @@ def hypso_is2(input_path, bins):
         path to IS2 dataset containing the variables 'dh' and 'dem_elevation'
     - bins
 
-    Results
+    - results_df
+        dataframe for storing 1s and 0s as in surge/no surge
+
+    Returns
     -------
     Pandas dataframe of elevation bins, plot of hypsometric elevation change for each year in dataset.
     """
@@ -105,21 +110,15 @@ def hypso_is2(input_path, bins):
             # append data to dictionary
             hypso_bins[year] = hypso
 
-    #for year, data_subset in data.groupby(data["date"].dt.year):
-    #    # todo: group the data by hydrological years
-    #    # create hypsometric bins
-    #    hypso_subset = xdem.volume.hypsometric_binning(
-    #        ddem=data_subset['dh'],
-    #        ref_dem=data_subset['dem_elevation'],
-    #        kind="custom",
-    #        bins=bins,
-    #        aggregation_function=np.nanmean
-    #    )
+            # if surge, append 1 to results, if not surge append 0 to results
+            if hypso_bins[year].iloc[0].value > 20:
+                surgenosurge[year]['hypso'] = 1
 
-        # append data to dictionary
-        #hypso_bins[year] = hypso
+            else:
+                surgenosurge[year]['hypso'] = 0
 
-    return hypso_bins
+    return hypso_bins, surgenosurge
+
 
 def hypso_dem(dems, bins, ref_dem):
     """
@@ -133,7 +132,7 @@ def hypso_dem(dems, bins, ref_dem):
     - ref_dem
         reference DEM from 2010
 
-    Results
+    Returns
     -------
     Dictionary of binned data.
     """
@@ -164,7 +163,7 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
-def ransac_alg(data, thresholds):
+def ransac_alg(data, thresholds, pltshow, pltsave):
     """
 
     Params
@@ -175,6 +174,8 @@ def ransac_alg(data, thresholds):
         list containing two values: [low threshold, high threshold]
 
     """
+    # todo return df with ransac coefficients for all the elevation bins
+
     # split data between thresholds
     icesat_high = data.where(data.h > thresholds[1], drop=True)
     icesat_mid = data.where((data.h > thresholds[0]) & (data.h < thresholds[1]), drop=True)
@@ -221,7 +222,6 @@ def ransac_alg(data, thresholds):
         #print("Estimated coefficients (true, linear regression, RANSAC):")
         #print(coef, lr.coef_, ransac.estimator_.coef_)
 
-
         # PLOT based on if it's high or low
         plt.subplot(1, 3, i)
         plt.scatter(
@@ -256,14 +256,13 @@ def ransac_alg(data, thresholds):
         coefficients.append(ransac_coef)
         i = i + 1
 
-    #plt.legend(loc="lower right")
-    plt.show()
+    if pltshow:
+        #plt.legend(loc="lower right")
+        plt.show()
 
     return ransac_coef
 
-def ransac(icesat_path):
-    # todo: add pd dataframe as input and output
-    # to store the ransac coefficients
+def ransac(icesat_path, surgenosurge, pltshow, pltsave):
 
     # load data
     data = xr.load_dataset(icesat_path)
@@ -271,14 +270,27 @@ def ransac(icesat_path):
     # todo: a better way to split based on statistics and stuff
     # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
     # and based on that determine the thresholds
-    thresholds = [200, 500]
+    thresholds = [300, 500]
 
     # loop through the years and do ransac both for high and low elevation
     years = np.unique(data.year_int.values)
     for year in years:
         if (year != years[-1]): # | (year != years[0]):
             subset = icesat.groupby_hydroyear(data, year)
-            ransac_alg(subset, thresholds)
+            ransac_coef = ransac_alg(subset, thresholds, pltshow, pltsave)
 
-    return
+            if ransac_coef > 0.5:
+                surgenosurge[year]['ransac'] = 1
 
+            else:
+                surgenosurge[year]['ransac'] = 0
+
+    return surgenosurge
+
+
+def updateSurgeSum(df):
+
+    for year in df:
+        df[year]['sum'] = df[year]['hypso'] + df[year]['ransac']
+
+    return df

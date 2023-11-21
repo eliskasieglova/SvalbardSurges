@@ -22,8 +22,6 @@ from pyproj import Proj
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 
-
-
 # common functions
 def point_convert(row):
     geom = Point(row['longitude'], row['latitude'])

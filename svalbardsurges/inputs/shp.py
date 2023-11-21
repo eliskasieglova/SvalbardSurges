@@ -1,7 +1,8 @@
 import geopandas as gpd
 from pathlib import Path
 
-def get_id_list(filepath, id_attr):
+
+def getIDs(filepath, id_attr):
     """
     Loops through entries in shp and extracts glacier IDs to a list.
 
@@ -23,6 +24,7 @@ def get_id_list(filepath, id_attr):
         glacier_ids.append(i)
 
     return glacier_ids
+
 
 def load_shp(file_path, id_attribute_name, glacier_id):
     """

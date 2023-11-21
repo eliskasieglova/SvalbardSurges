@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import socket
+import pandas as pd
 
 # The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
 if socket.gethostname() == "DESKTOP-09DFBN6":
@@ -36,18 +37,16 @@ def main():
     # choose which parts of code will be run and which not (True = will be run, False = will not be run)
     # ------------------------------------------------------------------------
 
-    hypso = False # hypsometric binning
-    ransac = True
+    hypso = True # hypsometric binning
+    ransac = True # RANSAC analysis
     validate = False # validation of dh from icesat compared to arcticdem
-    pltshow = True # plotting of results
-    # todo: action with plots - save or show?
+    pltshow = False # plotting of results
+    pltsave = False
     testdata = True
+
+
     if testdata:
         icesat_filepath = Path('nordenskiold_land-is2.nc')
-
-    # todo: create a pd dataframe that will be used for storing all the necessary info for the output and plotting
-
-    results = {}
 
     # ------------------------------------------------------------------------
     # CREATE DIRECTORIES
@@ -68,26 +67,6 @@ def main():
     # --------------------------------------------------------
     # DOWNLOAD DATA
     # --------------------------------------------------------
-
-    # before anything else im gonna now plot various atl03 and atl08 data
-    # open dataset
-    #ds = xr.open_dataset('data/icesat_ATL08.nc')
-
-    # convert datatype to int (yyyymmdd)
-    #ds['date_str'] = ds.date.values.astype(str)
-    #ds['date_int'] = [int(x[:10].replace('-', '')) for x in ds.date_str.values]
-
-    #hydrosilvestr = 20181031
-
-    #if plot == True:
-    #    for year in range(5):
-    #        subset = ds.where((ds.date_int.values > hydrosilvestr) & (ds.date_int.values <= hydrosilvestr+1000))
-            # plot
-    #        plt.scatter(subset.longitude, subset.latitude, marker='.', s=0.1)
-    #        plt.title(hydrosilvestr)
-    #        plt.show()
-
-    #        hydrosilvestr = hydrosilvestr + 10000
 
     # DOWNLOAD ICESAT-2
     # using icepyx. data product is selected at beginning of code.
@@ -129,6 +108,7 @@ def main():
             13406.1,
             13218.1
         ]
+
     if glacier_inventory == 'rgi':
         glacier_ids = [
             'G016964E77694N',
@@ -144,43 +124,34 @@ def main():
         id_attr = 'IDENT'
 
     # loop through all the glaciers in dataset
-    #glacier_ids = shp.get_id_list(glacinv_filepath, id_attr)
+    #glacier_ids = shp.getIDs(glacinv_filepath, id_attr)
 
     # --------------------------------------------------------------------
     # START OF ACTUAL CODE
     # --------------------------------------------------------------------
 
     # empty pd dataframe where the results of the analyses will go
-    #df = pd.DataFrame(index=len(glacier_ids), columns=["glacier_id", "name", "hypso", "ransac", "sum"])
-    #df.fillna(-1)
+    results = pd.DataFrame(
+        index=glacier_ids,
+        columns=[
+            "glacier_name",
+            "surge",
+            "geom",
+            "icesat_path",
+            "dem_path",
+            "latlon"
+        ]
+    )
+
+    surgenosurge = pd.DataFrame(
+        index = ['hypso', 'ransac', 'sum'],
+        columns = [2018, 2019, 2020, 2021, 2022]
+    )
 
     for glacier_id in glacier_ids:
-
-        # create dictionary record for each individual glacier
-
         # do it for each year - is there a surge or not?
         # --> id, name, surge or not surge, ransac values for each year, icesat dataset with dh for plotting,
         #     geometry for plotting
-
-        glac_results = {
-            "glac_info": {
-                "glac_id": glacier_id,
-                "glac_name": "",
-                "geom": "",
-                "path": ""
-            },
-            "data": {
-                "2018": "", # also a dictionary with easting, northing, lat, lon, dh, h, dem_h
-                "2019": "",
-                "2020": "",
-                "2021": "",
-                "2022": ""
-            },
-            "coefficients": {
-                "ransac": "",
-                "hypso": ""
-            }
-        }
 
         # load glacier outline
         glacier_outline = shp.load_shp(
@@ -188,8 +159,8 @@ def main():
             id_attribute_name=id_attr,
             glacier_id=glacier_id)
 
-        # add geometry to dictionary
-        glac_results['glac_info']['geom'] = glacier_outline.iloc[0].geometry
+        # add geometry to pd dataframe
+        results['geom'][glacier_id] = glacier_outline.geometry.iloc[0]
 
         if glacier_inventory == 'rgi':
             glacier_name = glacier_outline.glac_name.iloc[0]
@@ -197,8 +168,8 @@ def main():
         elif glacier_inventory == 'gao':
             glacier_name = glacier_outline.NAME.iloc[0]
 
-        # add record of glacier name to dictionary
-        glac_results['glac_info']['glac_name'] = glacier_name
+        # add record of glacier name to pd dataframe
+        results['glacier_name'][glacier_id] = glacier_name
 
         # create directory for saving figures for each glacier separately
         if not os.path.isdir(f"figures/{glacier_name}"):
@@ -210,12 +181,14 @@ def main():
         spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
         # subset data to glacier outline
-        icesat_subset_path = icesat.subset_icesat(
+        icesat_subset_path = icesat.icesatSpatialSubset(
             input_path=icesat_filepath,
             spatial_extent=spatial_extent,
             glacier_outline=glacier_outline,
             output_path=Path(f"cache/{glacier_name}-clipped_{icesat_product}_{glacier_inventory}.nc")) # Scheelebreen-clipped_ATL08_RGI.nc
 
+        # if the dataset is empty then don't run the analysiss
+        # todo exceptions
         if icesat_subset_path == 'empty':
             hypso = False
             ransac = False
@@ -244,102 +217,114 @@ def main():
             )
 
         # append path to subsetted icesat-2 to dictionary
-        glac_results['glac_info']['path'] = icesat_dh_path
+        results['icesat_path'][glacier_id] = icesat_dh_path
 
-        if pltshow == True:
-            plotting.plot_yearly_dh(
-                data_path=icesat_dh_path,
-                glacier_outline=glacier_outline,
-                glacier_name=glacier_name,
-                glacier_id=glacier_id,
-                output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png')
-            )
+        plotting.plot_yearly_dh(
+            data_path=icesat_dh_path,
+            glacier_outline=glacier_outline,
+            glacier_name=glacier_name,
+            glacier_id=glacier_id,
+            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png'),
+            pltshow=pltshow,
+            pltsave=pltsave
+        )
 
         # ANALYSIS
         if hypso:
-
             # hypsometric binning of glacier
             bins = analysis.create_bins(icesat_dh_path)
-            icesat_hypso = analysis.hypso_is2(
+            icesat_hypso, surgenosurge = analysis.icesatHypso(
                 input_path=icesat_dh_path,
-                bins=bins
+                bins=bins,
+                surgenosurge = surgenosurge
             )
 
-            print('hypsometric binning DONE')
-
-            if pltshow:
-                # plot hypsometric curves and yearly dh for glacier
-                plotting.plot_hypso_is2(
-                    data=icesat_hypso,
-                    glacier_id=glacier_id,
-                    glacier_name=glacier_name,
-                    glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
-                    output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}-{icesat_product}.png')
-                )
+            # plot hypsometric curves and yearly dh for glacier
+            plotting.plotHypso(
+                data=icesat_hypso,
+                glacier_id=glacier_id,
+                glacier_name=glacier_name,
+                glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
+                output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}-{icesat_product}.png'),
+                pltshow=pltshow,
+                pltsave=pltsave
+            )
 
             print(f'{glacier_name} analysis without errors.')
 
-        # todo: run ransac for group by year
         if ransac:
-            analysis.ransac(icesat_dh_path)
+            surgenosurge = analysis.ransac(icesat_dh_path, surgenosurge, pltshow, pltsave)
 
+        # update sums in surgenosurge df
+        surgenosurge = analysis.updateSurgeSum(surgenosurge)
+
+        # append surges to results df
+        results.loc[glacier_id, 'surge'] = list(surgenosurge.iloc[-1])
+
+
+
+        print(surgenosurge)
+
+    plotting.plotSurges('none', results, pltshow, pltsave)
+
+    for glacier_id in glacier_ids:
         # -------------------------------------------------------------
         # VALIDATION OF RESULTS
         # with arcticdem
         # -------------------------------------------------------------
         if validate:
             # path to ArcticDEM directory
-            arcticDEM_dir = Path('arcticdem/')
-            arcticDEMs = {}
+            arcticdem_dir = Path('arcticdem/')
+            arcticdems = {}
 
             # subset ArcticDEM rasters to glacier boundary
-            for file in os.listdir(arcticDEM_dir):
+            for file in os.listdir(arcticdem_dir):
                 year = os.path.split(file)[1][-8:-4]
 
-                arcticDEM_subset_path = dems.load_dem(
-                    input_path=arcticDEM_dir/file,
+                arcticdem_subset_path = dems.load_dem(
+                    input_path=arcticdem_dir/file,
                     spatial_extent=spatial_extent,
                     label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}')
 
-                arcticDEM_masked_path = dems.mask_dem(
-                    dem_path=arcticDEM_subset_path,
+                arcticdem_masked_path = dems.mask_dem(
+                    dem_path=arcticdem_subset_path,
                     glacier_outline=glacier_outline,
                     label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}')
 
-                arcticDEMs[year] = arcticDEM_masked_path
+                arcticdems[year] = arcticdem_masked_path
 
             # hypsometric bins
-            arcticDEM_hypso = analysis.hypso_dem(
-                dems=arcticDEMs,
+            arcticdem_hypso = analysis.hypso_dem(
+                dems=arcticdems,
                 bins=bins,
                 ref_dem=dem_masked_path
             )
 
             print(f'{glacier_name} validation without errors.')
 
-            if pltshow == True:
-                # plot hypso curves
-                plotting.plot_hypso_arcticdem(
-                    data=arcticDEM_hypso,
-                    glacier_id=glacier_id,
-                    glacier_name=glacier_name,
-                    glacier_area=glacier_outline.area.iloc[0]/1e6,
-                    output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso_{glacier_inventory}.png')
-                )
+            # plot hypso curves
+            plotting.plot_hypso_arcticdem(
+                data=arcticdem_hypso,
+                glacier_id=glacier_id,
+                glacier_name=glacier_name,
+                glacier_area=glacier_outline.area.iloc[0]/1e6,
+                output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso_{glacier_inventory}.png'),
+                pltshow=pltshow, pltsave=pltsave
+            )
 
-            if pltshow == True:
-                # plot elevation differences
-                for year in arcticDEMs:
-                    if year != '2022':
-                        plotting.plot_arcticDEM_dh(
-                            data=arcticDEMs,
-                            ref_dem_path=dem_masked_path,
-                            year=year,
-                            glacier_outline=glacier_outline,
-                            glacier_name=glacier_name,
-                            glacier_id=glacier_id,
-                            output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso{year}_{glacier_inventory}.png'),
-                        )
+            # plot elevation differences
+            for year in arcticdems:
+                if year != '2022':
+                    plotting.plot_arcticDEM_dh(
+                        data=arcticdems,
+                        ref_dem_path=dem_masked_path,
+                        year=year,
+                        glacier_outline=glacier_outline,
+                        glacier_name=glacier_name,
+                        glacier_id=glacier_id,
+                        output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_ademhypso{year}_{glacier_inventory}.png'),
+                        pltshow=pltshow, pltsave=pltsave
+                    )
 
 
 if __name__ == "__main__":

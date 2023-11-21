@@ -3,12 +3,9 @@ import geoutils as gu
 import rasterio as rio
 import variete
 import variete.vrt.vrt
-
-import os
 from matplotlib import pyplot as plt
-import numpy as np
-
 import warnings
+
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():
     import numba
@@ -81,7 +78,7 @@ def mask_dem(dem_path, glacier_outline, label, pltshow) -> Path:
     dem.load()
     dem.set_mask(~gao_rasterized)
 
-    if pltshow == True:
+    if pltshow:
         dem.show()
         plt.show()
 
