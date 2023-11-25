@@ -25,12 +25,13 @@ def main():
 
     # ICESat-2 download specifications
     icesat_product = 'ATL08'  # or ATL06 or ATL03
-    spatial_extent = [5, 75, 40, 82]  # svalbard
     date_range = ['2018-10-14', '2023-11-10']
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
-
-    # Glacier Outlines
     glacier_inventory = 'gao' # 'rgi' or 'gao'. will assign download url and filenames accordingly
+    area = "heer land"
+
+    bboxes = {"svalbard": [5, 75, 40, 82], "heer land": [15.7, 77.35, 18.6, 78]}
+    spatial_extent = bboxes[area]
 
     # ------------------------------------------------------------------------
     # CHOOSE ALGORITHMS
@@ -100,13 +101,15 @@ def main():
         directory=glacinv_filepath.parent
     )
 
-    print('everything downloaded')
-
     # list of glacier IDs based on selected inventory
+    # todo test the results on these two glacier inventories (on the same glaciers)
     if glacier_inventory == 'gao':
         glacier_ids = [
-            13406.1,
-            13218.1
+            12412,      # Storbreen
+            13406.1,    # Scheelebreen
+            13218.1,    # Doktorbreen
+            17310.1,    # Hinlopenbreen
+            15511.1     # Kongsbreen
         ]
 
     if glacier_inventory == 'rgi':
@@ -114,7 +117,8 @@ def main():
             'G016964E77694N',
             'G017525E77773N',
             'G017911E77804N',
-            'G016885E77574N'
+            'G016885E77574N',
+            'G016172E77192N'  # Storbreen
         ]
 
     # determine name of ID attribute based on chosen glacier inventory
@@ -126,9 +130,9 @@ def main():
     # loop through all the glaciers in dataset
     #glacier_ids = shp.getIDs(glacinv_filepath, id_attr)
 
-    # --------------------------------------------------------------------
-    # START OF ACTUAL CODE
-    # --------------------------------------------------------------------
+    # select glaciers inside bounding box (spatial extent)
+    glaciers = shp.withinBBox(spatial_extent, glacinv_filepath, Path(f'cache/{area}.shp'))
+    glacier_ids = shp.getIDs(Path(f'cache/{area}.shp'), id_attr)
 
     # empty pd dataframe where the results of the analyses will go
     results = pd.DataFrame(
@@ -139,46 +143,63 @@ def main():
             "geom",
             "icesat_path",
             "dem_path",
-            "latlon"
+            "latlon",
+            "data_exists"
         ]
     )
 
     surgenosurge = pd.DataFrame(
-        index = ['hypso', 'ransac', 'sum'],
-        columns = [2018, 2019, 2020, 2021, 2022]
+        index=['hypso', 'ransac', 'sum'],
+        columns=[2018, 2019, 2020, 2021, 2022]
     )
 
-    for glacier_id in glacier_ids:
-        # do it for each year - is there a surge or not?
-        # --> id, name, surge or not surge, ransac values for each year, icesat dataset with dh for plotting,
-        #     geometry for plotting
+    # --------------------------------------------------------------------
+    # START OF ACTUAL CODE
+    # --------------------------------------------------------------------
+    # loop through all the glaciers
 
+    gl_sum = len(glacier_ids)
+    i = 0
+    for glacier_id in glacier_ids:
+        i = i + 1
         # load glacier outline
         glacier_outline = shp.load_shp(
             file_path=str(glacinv_filepath),
             id_attribute_name=id_attr,
             glacier_id=glacier_id)
 
-        # add geometry to pd dataframe
-        results['geom'][glacier_id] = glacier_outline.geometry.iloc[0]
+        # compute bounds of glacieroutline
+        spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
+        # determine NAME column in attribute table
         if glacier_inventory == 'rgi':
             glacier_name = glacier_outline.glac_name.iloc[0]
-
         elif glacier_inventory == 'gao':
             glacier_name = glacier_outline.NAME.iloc[0]
 
-        # add record of glacier name to pd dataframe
+        # if the glacier name is None it means it's meaningles heheh (or like too small to surge, maybe)?
+        # todo if glacier area smaller than something then skip it
+        if (glacier_name == None) | (glacier_name == 'NEW0159'):
+            continue
+
+        # if there is a symbol that's causing troubles
+        if "?" in glacier_name:
+            glacier_name = glacier_name.replace("?", "")
+        if " " in glacier_name:
+            glacier_name = glacier_name.replace(" ", "")
+            glacier_name = glacier_name.replace("/", "")
+
+
+        # add record of glacier name, geometry to pd dataframe
         results['glacier_name'][glacier_id] = glacier_name
+        results['geom'][glacier_id] = glacier_outline.geometry.iloc[0]
+        print(glacier_name, glacier_id)
 
         # create directory for saving figures for each glacier separately
-        if not os.path.isdir(f"figures/{glacier_name}"):
-            os.mkdir(f"figures/{glacier_name}")
-        if not os.path.isdir(f"figures/{glacier_name}/{glacier_inventory}"):
-            os.mkdir(f"figures/{glacier_name}/{glacier_inventory}")
-
-        # compute bounds of glacieroutline
-        spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
+        if not os.path.isdir(f"figures/{glacier_id}"):
+            os.mkdir(f"figures/{glacier_id}")
+        if not os.path.isdir(f"figures/{glacier_id}/{glacier_inventory}"):
+            os.mkdir(f"figures/{glacier_id}/{glacier_inventory}")
 
         # subset data to glacier outline
         icesat_subset_path = icesat.icesatSpatialSubset(
@@ -190,10 +211,12 @@ def main():
         # if the dataset is empty then don't run the analysiss
         # todo exceptions
         if icesat_subset_path == 'empty':
-            hypso = False
-            ransac = False
-            validate = False
-            pltshow = False
+            # append information about empty subset to results and skip running the analysis
+            results['data_exists'][glacier_id] = False
+            continue
+        else:
+            # if data exists just append the information about that to the df
+            results['data_exists'][glacier_id] = True
 
         dem_subset_path = dems.load_dem(
             input_path=dem_mosaic_path[0],
@@ -207,26 +230,25 @@ def main():
             pltshow=pltshow
             )
 
-        if icesat_subset_path != 'empty':
-            # get elevation difference between ICESat-2 and reference DEM
-            icesat_dh_path = analysis.icesat_DEM_difference(
-                dem_path=dem_subset_path,
-                icesat_path=icesat_subset_path,
-                glacier_outline=glacier_outline,
-                output_path=Path(f"cache/{glacier_name}-dh-{icesat_product}-{glacier_inventory}.nc")
-            )
+        # get elevation difference between ICESat-2 and reference DEM
+        icesat_dh_path = analysis.icesat_DEM_difference(
+            dem_path=dem_subset_path,
+            icesat_path=icesat_subset_path,
+            glacier_outline=glacier_outline,
+            output_path=Path(f"cache/{glacier_name}-dh-{icesat_product}-{glacier_inventory}.nc")
+        )
+
+        if icesat_dh_path == 'empty':
+            results['data_exists'][glacier_id] = False
+            continue
 
         # append path to subsetted icesat-2 to dictionary
         results['icesat_path'][glacier_id] = icesat_dh_path
 
         plotting.plot_yearly_dh(
-            data_path=icesat_dh_path,
-            glacier_outline=glacier_outline,
-            glacier_name=glacier_name,
-            glacier_id=glacier_id,
+            data_path=icesat_dh_path, glacier_outline=glacier_outline, glacier_name=glacier_name, glacier_id=glacier_id,
             output_path=Path(f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png'),
-            pltshow=pltshow,
-            pltsave=pltsave
+            pltshow=pltshow, pltsave=pltsave
         )
 
         # ANALYSIS
@@ -250,10 +272,8 @@ def main():
                 pltsave=pltsave
             )
 
-            print(f'{glacier_name} analysis without errors.')
-
         if ransac:
-            surgenosurge = analysis.ransac(icesat_dh_path, surgenosurge, pltshow, pltsave)
+            surgenosurge = analysis.ransac(icesat_dh_path, surgenosurge, glacier_name, pltshow, pltsave)
 
         # update sums in surgenosurge df
         surgenosurge = analysis.updateSurgeSum(surgenosurge)
@@ -261,9 +281,11 @@ def main():
         # append surges to results df
         results.loc[glacier_id, 'surge'] = list(surgenosurge.iloc[-1])
 
-
+        # todo write df in file
 
         print(surgenosurge)
+        print(f'{glacier_name} analysis done.')
+        print(f'{i}/{gl_sum} done')
 
     plotting.plotSurges('none', results, pltshow, pltsave)
 

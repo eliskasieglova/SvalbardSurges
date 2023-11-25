@@ -70,9 +70,9 @@ def get_bounds(
     """
 
     region_bounds = {
-        "svalbard": {"left": 341002.5, "bottom": 8455002.5, "right": 905002.5, "top": 8982002.5},
+        "svalbard": {"left": 375211, "bottom": 8486823, "right": 527640, "top": 9008372},
         "nordenskiold": {"left": 443002.5, "bottom": 8626007.5, "right": 560242.5, "top": 8703007.5},
-        "heerland": {"left": 537010, "bottom": 8602780, "right": 582940, "top": 8656400},
+        "heerland": {"left": 537010, "bottom": 8602780, "right": 582940, "top": 8656400}
     }
 
     bounds = region_bounds[region]
@@ -119,8 +119,8 @@ def get_data_urls():
                 "NP_S0_DTM5_2011_25162_33.zip",
                 "NP_S0_DTM5_2011_25163_33.zip",
                 "NP_S0_DTM5_2012_25235_33.zip",
-                "NP_S0_DTM5_2012_25236_35.zip",
-                "NP_S0_DTM5_2021_33.zip",
+                "NP_S0_DTM5_2012_25236_35.zip"#,
+                #"NP_S0_DTM5_2021_33.zip",
             ]
         ],
         "outlines": [
@@ -215,7 +215,8 @@ def build_npi_mosaic(verbose: bool = True) -> tuple[Path, Path]:
 
     year_raster = gu.raster.merge_rasters(year_rasters, merge_algorithm=np.nanmax, resampling_method="nearest")
 
-    year_raster.reproject(dst_bounds=bounds, dst_res=res, dst_crs=crs, resampling="nearest").save(
+    # dst_bounds=bounds, before dst_rest (i deleted it so if something doesnt work, try putting it back)
+    year_raster.reproject(dst_bounds=bounds,  dst_res=res, dst_crs=crs, resampling="nearest").save(
         output_year_path, tiled=True, compress="lzw"
     )
     del year_raster

@@ -1,5 +1,13 @@
 import geopandas as gpd
 from pathlib import Path
+import os
+import socket
+
+# The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
+if socket.gethostname() == "DESKTOP-09DFBN6":
+    os.environ["PROJ_DATA"] =  "C:\\Users\\eliss\\anaconda3\\envs\\SvalbardSurges\\Lib\\site-packages\\pyproj\\proj_dir\\share\\proj"
+
+from pyproj import Proj
 
 
 def getIDs(filepath, id_attr):
@@ -66,3 +74,25 @@ def load_shp(file_path, id_attribute_name, glacier_id):
     glacier_outline.to_file(filename=output_file)
 
     return glacier_outline
+
+def withinBBox(bbox, filepath, output_file):
+
+    # if glacier outline is cached simply load the shapefile
+    if output_file.is_file():
+        subset = gpd.read_file(output_file).to_crs(32633)
+        return subset
+
+    # read shapefile
+    shp = gpd.read_file(filepath).to_crs(32633)
+
+    # convert bbox lat lon to easting northing
+    myproj = Proj("+proj=utm +zone=33 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs")  # assign projection
+    eastings, northings = myproj((bbox[0], bbox[2]), (bbox[1], bbox[3]))
+
+    # select glaciers within bounding box
+    subset = shp.cx[eastings[0]:eastings[1], northings[0]:northings[1]]
+
+    # cache subset
+    subset.to_file(filename=output_file)
+
+    return subset

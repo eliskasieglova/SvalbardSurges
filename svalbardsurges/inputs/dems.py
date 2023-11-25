@@ -80,8 +80,10 @@ def mask_dem(dem_path, glacier_outline, label, pltshow) -> Path:
 
     if pltshow:
         dem.show()
+        plt.title(f'{label} masked DEM')
         plt.show()
 
+    # cache DEM
     dem.save(str(path))
 
     return path

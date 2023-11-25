@@ -63,7 +63,8 @@ def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path, pltshow
 
     if pltsave:
         plt.savefig(output_path)
-        plt.close()
+
+    plt.close()
 
     return
 
@@ -141,7 +142,8 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
 
     if pltsave:
         plt.savefig(output_path)
-        plt.close()
+
+    plt.close()
 
     return
 
@@ -216,9 +218,11 @@ def plot_hypso_arcticdem(data, glacier_id, glacier_name, glacier_area, output_pa
 
     if pltsave:
         plt.savefig(output_path)
-        plt.close()
+
+    plt.close()
 
     return
+
 
 def plot_arcticDEM_dh(data, ref_dem_path, year, glacier_outline, glacier_name, glacier_id, output_path, pltshow, pltsave):
     '''
@@ -271,38 +275,48 @@ def plot_arcticDEM_dh(data, ref_dem_path, year, glacier_outline, glacier_name, g
 
     # action based on preferences
     if pltshow:
+        plt.title(f'{glacier_name} ArcticDEM')
         plt.show()
 
     if pltsave:
         plt.savefig(output_path)
-        plt.close()
+
+    plt.close()
 
     return
 
 
 def plotSurges(svalbard_shp, results_df, pltshow, pltsave):
 
+
     plt.figure()
+
+
     # initiate plot
     # plot svalbard
-
 
     # plot points where surge (color by year)
     for i, row in results_df.iterrows():
         # if one of the years indicates a glacier surge
-        if (1 in results_df['surge'][i]) | (2 in results_df['surge'][i]):
-            print(f"{results_df['glacier_name'][i]} is surging!")
+        if type(results_df['surge'][i]) != float:
 
-            # plot glacier outline
-            polygon = results_df["geom"][i]
-            if "Multi" not in polygon.geom_type:
-                polygons = [polygon]
-            else:
-                polygons = polygon.geoms
+            if (1 in results_df['surge'][i]) | (2 in results_df['surge'][i]):
+                print(f"{results_df['glacier_name'][i]} is surging!")
 
-            for polygon in polygons:
-                plt.plot(*polygon.exterior.xy, color='red')
+                # plot glacier outline
+                polygon = results_df["geom"][i]
+                if "Multi" not in polygon.geom_type:
+                    polygons = [polygon]
+                else:
+                    polygons = polygon.geoms
 
+                for polygon in polygons:
+                    plt.plot(*polygon.exterior.xy, color='red')
+
+                print()
+
+    plt.gca().set_aspect('equal')
+    plt.title(f'surging glaciers')
     plt.show()
 
     return

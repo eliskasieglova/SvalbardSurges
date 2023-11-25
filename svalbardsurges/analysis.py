@@ -51,6 +51,9 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
     data["dh"] = data["h"] - data["dem_elevation"] - 31.55 # todo a bit better correction
 
+    if data.dropna('index')['dh'].size == 0:
+        return 'empty'
+
     # save as netcdf file
     data.to_netcdf(output_path)
 
@@ -96,16 +99,20 @@ def icesatHypso(input_path, bins, surgenosurge):
     for year in years:
         if year != years[-1]:
             y = year * 10000
-            hydrosilvestr = y + 1031  # create hydrosilvestr, for example 20181031 (october 31st 2018)
+            hydrosilvestr = y + 1031  # create hydrosilvestr, for example 20181031 (October 31st 2018)
             subset = data.where((data.date_int.values > hydrosilvestr) & (data.date_int.values <= hydrosilvestr+10000))
 
-            hypso = xdem.volume.hypsometric_binning(
-                ddem=subset['dh'],
-                ref_dem=subset['dem_elevation'],
-                kind="custom",
-                bins=bins,
-                aggregation_function=np.nanmean
-            )
+            try:
+                hypso = xdem.volume.hypsometric_binning(
+                    ddem=subset['dh'],
+                    ref_dem=subset['dem_elevation'],
+                    kind="custom",
+                    bins=bins,
+                    aggregation_function=np.nanmean
+                )
+            except:
+                surgenosurge[year]['hypso'] = -999
+                return hypso_bins, surgenosurge
 
             # append data to dictionary
             hypso_bins[year] = hypso
@@ -163,7 +170,7 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
-def ransac_alg(data, thresholds, pltshow, pltsave):
+def ransac_alg(data, thresholds, glacier_name, pltshow, pltsave):
     """
 
     Params
@@ -183,18 +190,25 @@ def ransac_alg(data, thresholds, pltshow, pltsave):
 
     datasets = [icesat_high, icesat_mid, icesat_low]
 
+    # if no data for given year
+    if data.index.size == 0:
+        return -999
+
     year = max(data.year_int.values)
+
     # create with subplots and title
     plt.subplots(1, 3, sharey=True)
     #plt.xticks([20180000, 20220000])
-    plt.suptitle(f'{str(year-1)[:4]}-{str(year)[:4]}')
-    lw = 2
+    plt.suptitle(f'{str(year-1)[:4]}-{str(year)[:4]}, {glacier_name}')
+
+
+    lw = 2 # linewidth for plots
 
     coefficients = []
 
     i = 1
     for data in datasets:
-        # RANSAC algorithm taken from scikit.learn documentation
+        # RANSAC from scikit.learn documentation
         # x-axis = time, y-axis = dh
         # so what we are comparing is not differences between years but differences between given year and 2010 (DEM)
 
@@ -207,9 +221,14 @@ def ransac_alg(data, thresholds, pltshow, pltsave):
         #lr.fit(X, y)
 
         # Robustly fit data with ransac algorithm
-        # todo: try except for not enough samples (n_samples = 1)
         ransac = linear_model.RANSACRegressor(max_trials=100)
-        ransac.fit(X, y)
+
+        # try except for if there is not enough samples
+        try:
+            ransac.fit(X, y)
+        except:
+            return 0
+
         inlier_mask = ransac.inlier_mask_
         outlier_mask = np.logical_not(inlier_mask)
 
@@ -260,24 +279,29 @@ def ransac_alg(data, thresholds, pltshow, pltsave):
         #plt.legend(loc="lower right")
         plt.show()
 
+    plt.close()
+
     return ransac_coef
 
-def ransac(icesat_path, surgenosurge, pltshow, pltsave):
+def ransac(icesat_path, surgenosurge, glacier_name, pltshow, pltsave):
 
     # load data
     data = xr.load_dataset(icesat_path)
 
     # todo: a better way to split based on statistics and stuff
+    # for example lower 1/5, upper 1/5 and in between
+    # or thirds
+    # min, max, avg, median
     # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
     # and based on that determine the thresholds
-    thresholds = [300, 500]
+    thresholds = [200, 500]
 
     # loop through the years and do ransac both for high and low elevation
     years = np.unique(data.year_int.values)
     for year in years:
         if (year != years[-1]): # | (year != years[0]):
             subset = icesat.groupby_hydroyear(data, year)
-            ransac_coef = ransac_alg(subset, thresholds, pltshow, pltsave)
+            ransac_coef = ransac_alg(subset, thresholds, glacier_name, pltshow, pltsave)
 
             if ransac_coef > 0.5:
                 surgenosurge[year]['ransac'] = 1
