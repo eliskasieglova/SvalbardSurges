@@ -38,20 +38,18 @@ def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path, pltshow
             # plot histogram
             ax1 = plt.subplot(2, 3, n)
             ax1.barh(y = data[year].index.mid,
-                     width = data[year]['count']/glacier_area,
+                     width = data[year]['count'],
                      height = data[year].index.right - data[year].index.left,
-                     edgecolor="black",
-                     zorder=0,
-                     alpha=0.1
-                 )
-            ax1.set_xlim(0,3)
+                     edgecolor="black", zorder=0, alpha=0.1
+                    )
+            #ax1.set_xlim(0,3)
 
             # plot hypsometric curve
             ax2 = ax1.twiny()
             ax2.plot(data[year]['value'], data[year].index.mid, zorder=100)
             ax2.set_title(f"2010-{year}")
             ax2.set_facecolor('aliceblue')
-            ax2.set_xlim(-30, 30)
+            ax2.set_xlim(-30, 60)
 
             n = n + 1
 
@@ -65,6 +63,15 @@ def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path, pltshow
         plt.savefig(output_path)
 
     plt.close()
+
+    return
+
+def plotEvaluatedHypso(hypso, pltshow, pltsave):
+
+
+
+
+
 
     return
 
@@ -89,6 +96,7 @@ def plot_yearly_dh(data_path, glacier_outline, glacier_name, glacier_id, output_
     -------
     Saves figure of plotted yearly elevation differences.
     """
+    pltshow=False
 
     if pltsave | pltshow:
         # open data
@@ -320,4 +328,3 @@ def plotSurges(svalbard_shp, results_df, pltshow, pltsave):
     plt.show()
 
     return
-

@@ -27,8 +27,11 @@ def main():
     icesat_product = 'ATL08'  # or ATL06 or ATL03
     date_range = ['2018-10-14', '2023-11-10']
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
-    glacier_inventory = 'gao' # 'rgi' or 'gao'. will assign download url and filenames accordingly
+    glacier_inventory = 'rgi' # 'rgi' or 'gao'. will assign download url and filenames accordingly
     area = "heer land"
+
+    hypso_threshold = 10
+    ransac_threshold = 0.5
 
     bboxes = {"svalbard": [5, 75, 40, 82], "heer land": [15.7, 77.35, 18.6, 78]}
     spatial_extent = bboxes[area]
@@ -40,12 +43,13 @@ def main():
 
     hypso = True # hypsometric binning
     ransac = True # RANSAC analysis
+    linearregression = True
     validate = False # validation of dh from icesat compared to arcticdem
-    pltshow = False # plotting of results
+
+    pltshow = True # plotting of results
     pltsave = False
+
     testdata = True
-
-
     if testdata:
         icesat_filepath = Path('nordenskiold_land-is2.nc')
 
@@ -105,20 +109,20 @@ def main():
     # todo test the results on these two glacier inventories (on the same glaciers)
     if glacier_inventory == 'gao':
         glacier_ids = [
-            12412,      # Storbreen
+            #12412,      # Storbreen
             13406.1,    # Scheelebreen
             13218.1,    # Doktorbreen
-            17310.1,    # Hinlopenbreen
-            15511.1     # Kongsbreen
+            #17310.1,    # Hinlopenbreen
+            #15511.1     # Kongsbreen
         ]
 
     if glacier_inventory == 'rgi':
         glacier_ids = [
-            'G016964E77694N',
-            'G017525E77773N',
-            'G017911E77804N',
-            'G016885E77574N',
-            'G016172E77192N'  # Storbreen
+            'G016964E77694N',   # Scheelebreen
+            #'G017525E77773N',
+            #'G017911E77804N',
+            #'G016885E77574N',
+            #'G016172E77192N'  # Storbreen
         ]
 
     # determine name of ID attribute based on chosen glacier inventory
@@ -131,8 +135,8 @@ def main():
     #glacier_ids = shp.getIDs(glacinv_filepath, id_attr)
 
     # select glaciers inside bounding box (spatial extent)
-    glaciers = shp.withinBBox(spatial_extent, glacinv_filepath, Path(f'cache/{area}.shp'))
-    glacier_ids = shp.getIDs(Path(f'cache/{area}.shp'), id_attr)
+    #glaciers = shp.withinBBox(spatial_extent, glacinv_filepath, Path(f'cache/{area}.shp'))
+    #glacier_ids = shp.getIDs(Path(f'cache/{area}.shp'), id_attr)
 
     # empty pd dataframe where the results of the analyses will go
     results = pd.DataFrame(
@@ -140,6 +144,7 @@ def main():
         columns=[
             "glacier_name",
             "surge",
+            "surgevalues",
             "geom",
             "icesat_path",
             "dem_path",
@@ -149,7 +154,12 @@ def main():
     )
 
     surgenosurge = pd.DataFrame(
-        index=['hypso', 'ransac', 'sum'],
+        index=['hypso', 'ransac', 'linreg', 'sum'],
+        columns=[2018, 2019, 2020, 2021, 2022]
+    )
+
+    surgevalues = pd.DataFrame(
+        index=['hypso', 'ransac', 'linreg'],
         columns=[2018, 2019, 2020, 2021, 2022]
     )
 
@@ -188,7 +198,6 @@ def main():
         if " " in glacier_name:
             glacier_name = glacier_name.replace(" ", "")
             glacier_name = glacier_name.replace("/", "")
-
 
         # add record of glacier name, geometry to pd dataframe
         results['glacier_name'][glacier_id] = glacier_name
@@ -254,16 +263,23 @@ def main():
         # ANALYSIS
         if hypso:
             # hypsometric binning of glacier
+            # todo remove threshold part (this will be in evaluate hypso)
             bins = analysis.create_bins(icesat_dh_path)
-            icesat_hypso, surgenosurge = analysis.icesatHypso(
+            hypso, surgenosurge, surgevalues = analysis.icesatHypso(
                 input_path=icesat_dh_path,
                 bins=bins,
-                surgenosurge = surgenosurge
+                surgenosurge = surgenosurge,
+                surgevalues=surgevalues,
+                threshold=hypso_threshold
             )
+
+            # surge or not surge?
+            # todo remove this part from the function above
+            analysis.evaluateHypso(hypso)
 
             # plot hypsometric curves and yearly dh for glacier
             plotting.plotHypso(
-                data=icesat_hypso,
+                data=hypso,
                 glacier_id=glacier_id,
                 glacier_name=glacier_name,
                 glacier_area=glacier_outline.geometry.area.iloc[0]/1e6,
@@ -272,18 +288,27 @@ def main():
                 pltsave=pltsave
             )
 
+            # todo plot hypso with the linear regression
+
         if ransac:
-            surgenosurge = analysis.ransac(icesat_dh_path, surgenosurge, glacier_name, pltshow, pltsave)
+            surgenosurge, surgevalues = analysis.regression("ransac", icesat_dh_path, surgenosurge, surgevalues, ransac_threshold,
+                                                        glacier_name, pltshow, pltsave)
+
+        if linearregression:
+            surgenosurge, surgevalues = analysis.regression("linreg", icesat_dh_path, surgenosurge, surgevalues, ransac_threshold,
+                                                        glacier_name, pltshow, pltsave)
 
         # update sums in surgenosurge df
         surgenosurge = analysis.updateSurgeSum(surgenosurge)
 
         # append surges to results df
         results.loc[glacier_id, 'surge'] = list(surgenosurge.iloc[-1])
+        results.loc[glacier_id, 'surgevalues'] = (surgevalues.iloc[0], surgevalues.iloc[1])
 
         # todo write df in file
 
         print(surgenosurge)
+        print(surgevalues)
         print(f'{glacier_name} analysis done.')
         print(f'{i}/{gl_sum} done')
 
@@ -295,6 +320,7 @@ def main():
         # with arcticdem
         # -------------------------------------------------------------
         if validate:
+            # todo validation in loop above
             # path to ArcticDEM directory
             arcticdem_dir = Path('arcticdem/')
             arcticdems = {}
@@ -311,7 +337,8 @@ def main():
                 arcticdem_masked_path = dems.mask_dem(
                     dem_path=arcticdem_subset_path,
                     glacier_outline=glacier_outline,
-                    label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}')
+                    label=f'arcticdem_{glacier_name}_{glacier_inventory}_{year}',
+                    pltshow=pltshow)
 
                 arcticdems[year] = arcticdem_masked_path
 

@@ -66,11 +66,14 @@ def create_bins(data_path):
     data = xr.open_dataset(data_path)
 
     bins = np.nanpercentile(data["dem_elevation"], np.linspace(0, 100, 6))
+    bins = np.nanpercentile(data['dem_elevation'], np.linspace(0, 100, 4))
+    # bin for every 100 meters
+    bins = np.array([0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100])
 
     return bins
 
 
-def icesatHypso(input_path, bins, surgenosurge):
+def icesatHypso(input_path, bins, surgenosurge, surgevalues, threshold):
     """
     Hypsometric binning of glacier elevation changes.
 
@@ -101,6 +104,7 @@ def icesatHypso(input_path, bins, surgenosurge):
             y = year * 10000
             hydrosilvestr = y + 1031  # create hydrosilvestr, for example 20181031 (October 31st 2018)
             subset = data.where((data.date_int.values > hydrosilvestr) & (data.date_int.values <= hydrosilvestr+10000))
+            year = year + 1
 
             try:
                 hypso = xdem.volume.hypsometric_binning(
@@ -112,20 +116,122 @@ def icesatHypso(input_path, bins, surgenosurge):
                 )
             except:
                 surgenosurge[year]['hypso'] = -999
-                return hypso_bins, surgenosurge
+                surgevalues[year]['hypso'] = -999
+                return hypso_bins, surgenosurge, surgevalues
 
             # append data to dictionary
             hypso_bins[year] = hypso
 
-            # if surge, append 1 to results, if not surge append 0 to results
-            if hypso_bins[year].iloc[0].value > 20:
-                surgenosurge[year]['hypso'] = 1
+            # append elevation change in lower part of glacier to values df
+            surgevalues[year]['hypso'] = hypso_bins[year].iloc[0].value
 
+            # if surge, append 1 to results, if not surge append 0 to results
+            if hypso_bins[year].iloc[0].value > threshold:
+                surgenosurge[year]['hypso'] = 1
             else:
                 surgenosurge[year]['hypso'] = 0
 
-    return hypso_bins, surgenosurge
+    return hypso_bins, surgenosurge, surgevalues
 
+def evaluateHypso(hypso, threshold=0.3):
+
+    # values for plotting
+    xvalues = [50, 250, 350, 450, 550, 650, 750, 850, 950, 1050]
+    xlabels = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+
+    # intitiate plot
+    plt.subplots(2, 2)
+
+    i = 1
+    # loop through years in hypso dictionary
+    for year in hypso:
+        # call subplot
+        ax = plt.subplot(2, 2, i)
+
+        # prepare data
+        x = hypso[year].index.mid
+        y = hypso[year].value
+
+        # remove Nans from list
+        x, y = removeNans(x, y)
+
+        # now try to put a curve through it
+        from scipy.optimize import curve_fit
+        parameters, covariance = curve_fit(Gauss, x, y)
+        fit_A = parameters[0]
+        fit_B = parameters[1]
+
+        fit_y = Gauss(y, fit_A, fit_B)
+
+        # plot data
+        plt.scatter(x, y, color='orange', marker='.')  # points
+        plt.plot(x, fit_y, '-', label='fit')  # curve
+
+        # linear regression scikit
+        x = x.reshape(-1, 1)
+        y = y.reshape(-1, 1)
+        lr = linear_model.LinearRegression()
+        lr.fit(x, y)
+
+        line_X = np.arange(x.min(), x.max())[:, np.newaxis]
+        line_y = lr.predict(line_X)
+
+        # plot
+        plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
+
+        # coefficient
+        coef = lr.coef_[0][0]
+
+
+        # polynomial regression
+        x = x.reshape(1, -1)
+        y = y.reshape(1, -1)
+        x = x.tolist()
+        y = y.tolist()
+
+        x = x[0]
+        y = y[0]
+
+        poly_fit = np.poly1d(np.polyfit(x, y, 2))
+        xx = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+        plt.plot(xx, poly_fit(xx), c='r', linestyle='-')
+
+        # invert x-axis to start with bigger values on the left
+        ax.invert_xaxis()
+        i=i+1
+
+    plt.show()
+
+    return
+
+
+def removeNans(x, y):
+    x = x.tolist()
+    y = y.tolist()
+    a = x
+    b = y
+    # todo describe function
+    # go through elements of list
+    unwanted = []
+    for i in range(len(y)):
+        # if value is nan, then remove the value from the list (don't plot, doesn't go in the analysis)
+        if not y[i] < 10000:  # todo IMPROVE (this is a very quick and ugly fix for getting rid of nans)
+            unwanted.append(i)
+
+    # delete the unwanted nans (based on index)
+    for i in sorted(unwanted, reverse=True):
+        del x[i]
+        del y[i]
+
+    # convert back to arrays
+    x = np.array(a)
+    y = np.array(b)
+    return x, y
+
+
+def Gauss(x, A, B):
+    y = A*np.exp(-1*B*x**2)
+    return y
 
 def hypso_dem(dems, bins, ref_dem):
     """
@@ -170,7 +276,7 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
-def ransac_alg(data, thresholds, glacier_name, pltshow, pltsave):
+def regressionAlg(algorithm, data, thresholds, glacier_name, pltshow, pltsave):
     """
 
     Params
@@ -181,109 +287,68 @@ def ransac_alg(data, thresholds, glacier_name, pltshow, pltsave):
         list containing two values: [low threshold, high threshold]
 
     """
-    # todo return df with ransac coefficients for all the elevation bins
 
-    # split data between thresholds
-    icesat_high = data.where(data.h > thresholds[1], drop=True)
-    icesat_mid = data.where((data.h > thresholds[0]) & (data.h < thresholds[1]), drop=True)
-    icesat_low = data.where(data.h < thresholds[0], drop=True)
-
-    datasets = [icesat_high, icesat_mid, icesat_low]
-
-    # if no data for given year
+    # do it only on the whole glacier (not split by bins)
     if data.index.size == 0:
         return -999
 
     year = max(data.year_int.values)
 
-    # create with subplots and title
-    plt.subplots(1, 3, sharey=True)
-    #plt.xticks([20180000, 20220000])
-    plt.suptitle(f'{str(year-1)[:4]}-{str(year)[:4]}, {glacier_name}')
+    plt.suptitle(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}')
 
+    lw = 2  # linewidth for plots
 
-    lw = 2 # linewidth for plots
+    # reshape arrays
+    X = data.h.values.reshape(-1, 1)
+    y = data.dh.values.reshape(-1, 1)
 
-    coefficients = []
+    if algorithm == "linreg":
+        # Fit line
+        lr = linear_model.LinearRegression()
+        lr.fit(X, y)
 
-    i = 1
-    for data in datasets:
-        # RANSAC from scikit.learn documentation
-        # x-axis = time, y-axis = dh
-        # so what we are comparing is not differences between years but differences between given year and 2010 (DEM)
+        line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+        line_y = lr.predict(line_X)
 
-        # reshape arrays
-        X = data.h.values.reshape(-1, 1)
-        y = data.dh.values.reshape(-1, 1)
+        # plot
+        plt.scatter(X, y, color="yellowgreen", marker='.')
+        plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
 
-        # Fit line using all data
-        #lr = linear_model.LinearRegression()
-        #lr.fit(X, y)
+        # coefficient
+        coef = lr.coef_[0][0]
 
+    # RANSAC
+    if algorithm == "ransac":
         # Robustly fit data with ransac algorithm
         ransac = linear_model.RANSACRegressor(max_trials=100)
-
-        # try except for if there is not enough samples
-        try:
-            ransac.fit(X, y)
-        except:
-            return 0
+        ransac.fit(X, y)
 
         inlier_mask = ransac.inlier_mask_
         outlier_mask = np.logical_not(inlier_mask)
 
         # Predict data of estimated models
         line_X = np.arange(X.min(), X.max())[:, np.newaxis]
-        #line_y = lr.predict(line_X)
         line_y_ransac = ransac.predict(line_X)
 
-        # Compare estimated coefficients
-        #print("Estimated coefficients (true, linear regression, RANSAC):")
-        #print(coef, lr.coef_, ransac.estimator_.coef_)
+        # PLOT
+        plt.scatter(X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers")
+        plt.scatter(X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers")
+        plt.plot(line_X, line_y_ransac, color="cornflowerblue", linewidth=lw, label="RANSAC regressor")
 
-        # PLOT based on if it's high or low
-        plt.subplot(1, 3, i)
-        plt.scatter(
-            X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers"
-        )
-        plt.scatter(
-            X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers"
-        )
-        #plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
-        plt.plot(
-            line_X,
-            line_y_ransac,
-            color="cornflowerblue",
-            linewidth=lw,
-            label="RANSAC regressor",
-        )
+        # ransac coefficient
+        coef = ransac.estimator_.coef_[0][0]
 
-        if i == 1:
-            t = f'>{thresholds[1]}m'
-
-        elif i == 2:
-            t = f'{thresholds[0]}-{thresholds[1]}m'
-
-        elif i == 3:
-            t = f'<{thresholds[0]}m'
-
-        ransac_coef = ransac.estimator_.coef_[0][0]
-        plt.title(f'{t}\n{str(ransac_coef)[:5]}')
-        plt.xlabel("Input")
-        plt.ylabel("Response")
-
-        coefficients.append(ransac_coef)
-        i = i + 1
+    plt.title(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}, {coef}')
+    plt.xlabel("Input")
+    plt.ylabel("Response")
 
     if pltshow:
         #plt.legend(loc="lower right")
         plt.show()
 
-    plt.close()
+    return coef
 
-    return ransac_coef
-
-def ransac(icesat_path, surgenosurge, glacier_name, pltshow, pltsave):
+def regression(algorithm, icesat_path, surgenosurge, surgevalues, threshold, glacier_name, pltshow, pltsave):
 
     # load data
     data = xr.load_dataset(icesat_path)
@@ -294,22 +359,25 @@ def ransac(icesat_path, surgenosurge, glacier_name, pltshow, pltsave):
     # min, max, avg, median
     # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
     # and based on that determine the thresholds
-    thresholds = [200, 500]
+    thresholds = [400, 500]
 
     # loop through the years and do ransac both for high and low elevation
     years = np.unique(data.year_int.values)
     for year in years:
         if (year != years[-1]): # | (year != years[0]):
             subset = icesat.groupby_hydroyear(data, year)
-            ransac_coef = ransac_alg(subset, thresholds, glacier_name, pltshow, pltsave)
+            coef = regressionAlg(algorithm, subset, thresholds, glacier_name, pltshow, pltsave)
 
-            if ransac_coef > 0.5:
-                surgenosurge[year]['ransac'] = 1
+            # append coefficient to values df
+            surgevalues[year][algorithm] = coef
 
+            # update 1 or 0 for surge/not surge based on chosen threshold
+            if coef > threshold:
+                surgenosurge[year][algorithm] = 1
             else:
-                surgenosurge[year]['ransac'] = 0
+                surgenosurge[year][algorithm] = 0
 
-    return surgenosurge
+    return surgenosurge, surgevalues
 
 
 def updateSurgeSum(df):
