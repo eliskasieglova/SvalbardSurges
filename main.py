@@ -41,15 +41,17 @@ def main():
     # choose which parts of code will be run and which not (True = will be run, False = will not be run)
     # ------------------------------------------------------------------------
 
-    hypso = True # hypsometric binning
-    ransac = True # RANSAC analysis
-    linearregression = True
+    hypso = False # hypsometric binning
+    ransac = False # RANSAC analysis
+    linearregression = False
+    kmeans = False
+    leastsquares = True
     validate = False # validation of dh from icesat compared to arcticdem
 
-    pltshow = True # plotting of results
-    pltsave = False
+    pltshow = False  # show plots
+    pltsave = False  # save plots
 
-    testdata = True
+    testdata = True  # use test d
     if testdata:
         icesat_filepath = Path('nordenskiold_land-is2.nc')
 
@@ -119,10 +121,10 @@ def main():
     if glacier_inventory == 'rgi':
         glacier_ids = [
             'G016964E77694N',   # Scheelebreen
-            #'G017525E77773N',
-            #'G017911E77804N',
-            #'G016885E77574N',
-            #'G016172E77192N'  # Storbreen
+            'G017525E77773N',
+            'G017911E77804N',
+            'G016885E77574N',
+            'G016172E77192N'  # Storbreen
         ]
 
     # determine name of ID attribute based on chosen glacier inventory
@@ -274,8 +276,7 @@ def main():
             )
 
             # surge or not surge?
-            # todo remove this part from the function above
-            analysis.evaluateHypso(hypso)
+            analysis.evaluateHypso(hypso, pltshow)
 
             # plot hypsometric curves and yearly dh for glacier
             plotting.plotHypso(
@@ -288,15 +289,19 @@ def main():
                 pltsave=pltsave
             )
 
-            # todo plot hypso with the linear regression
-
         if ransac:
             surgenosurge, surgevalues = analysis.regression("ransac", icesat_dh_path, surgenosurge, surgevalues, ransac_threshold,
-                                                        glacier_name, pltshow, pltsave)
+                                                        glacier_name, pltshow, pltsave) # todo move plotting
 
         if linearregression:
             surgenosurge, surgevalues = analysis.regression("linreg", icesat_dh_path, surgenosurge, surgevalues, ransac_threshold,
-                                                        glacier_name, pltshow, pltsave)
+                                                        glacier_name, pltshow, pltsave) # todo move plotting
+
+        if kmeans:
+            analysis.clusterAnalysis(icesat_dh_path, surgenosurge, surgevalues, glacier_name, pltshow, pltsave)
+
+        if leastsquares:
+            analysis.leastSquares(icesat_dh_path)
 
         # update sums in surgenosurge df
         surgenosurge = analysis.updateSurgeSum(surgenosurge)

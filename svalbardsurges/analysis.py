@@ -3,7 +3,15 @@ import numpy as np
 import warnings
 import rasterio as rio
 from matplotlib import pyplot as plt
-from sklearn import datasets, linear_model
+from sklearn import linear_model, metrics
+from sklearn.cluster import KMeans, DBSCAN, SpectralClustering
+from sklearn.mixture import GaussianMixture
+from sklearn.model_selection import GridSearchCV
+from matplotlib.patches import Ellipse
+from scipy import linalg
+from scipy.optimize import curve_fit
+import pandas as pd
+
 
 # Catch a deprecation warning that arises from skgstat when importing xDEM
 with warnings.catch_warnings():
@@ -133,75 +141,73 @@ def icesatHypso(input_path, bins, surgenosurge, surgevalues, threshold):
 
     return hypso_bins, surgenosurge, surgevalues
 
-def evaluateHypso(hypso, threshold=0.3):
 
-    # values for plotting
-    xvalues = [50, 250, 350, 450, 550, 650, 750, 850, 950, 1050]
-    xlabels = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
+def evaluateHypso(hypso, pltshow):
+    # todo least squares, figure out other means of identifying outliers (surges)
+    # todo leave evaluating, move plotting
+    if pltshow:
+        # intitiate plot
+        plt.subplots(2, 2)
 
-    # intitiate plot
-    plt.subplots(2, 2)
+        i = 1
+        # loop through years in hypso dictionary
+        for year in hypso:
+            # call subplot
+            ax = plt.subplot(2, 2, i)
 
-    i = 1
-    # loop through years in hypso dictionary
-    for year in hypso:
-        # call subplot
-        ax = plt.subplot(2, 2, i)
+            # prepare data
+            x = hypso[year].index.mid
+            y = hypso[year].value
 
-        # prepare data
-        x = hypso[year].index.mid
-        y = hypso[year].value
+            # remove Nans from list
+            x, y = removeNans(x, y)
 
-        # remove Nans from list
-        x, y = removeNans(x, y)
+            # now try to put a curve through it
+            from scipy.optimize import curve_fit
+            parameters, covariance = curve_fit(Gauss, x, y) # todo least squares
+            fit_A = parameters[0]
+            fit_B = parameters[1]
 
-        # now try to put a curve through it
-        from scipy.optimize import curve_fit
-        parameters, covariance = curve_fit(Gauss, x, y)
-        fit_A = parameters[0]
-        fit_B = parameters[1]
+            fit_y = Gauss(y, fit_A, fit_B)
 
-        fit_y = Gauss(y, fit_A, fit_B)
+            # plot data
+            plt.scatter(x, y, color='orange', marker='.')  # points
+            plt.plot(x, fit_y, '-', label='fit')  # curve
 
-        # plot data
-        plt.scatter(x, y, color='orange', marker='.')  # points
-        plt.plot(x, fit_y, '-', label='fit')  # curve
+            # linear regression scikit
+            x = x.reshape(-1, 1)
+            y = y.reshape(-1, 1)
+            lr = linear_model.LinearRegression()
+            lr.fit(x, y)
 
-        # linear regression scikit
-        x = x.reshape(-1, 1)
-        y = y.reshape(-1, 1)
-        lr = linear_model.LinearRegression()
-        lr.fit(x, y)
+            line_X = np.arange(x.min(), x.max())[:, np.newaxis]
+            line_y = lr.predict(line_X)
 
-        line_X = np.arange(x.min(), x.max())[:, np.newaxis]
-        line_y = lr.predict(line_X)
+            # plot
+            plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
 
-        # plot
-        plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
-
-        # coefficient
-        coef = lr.coef_[0][0]
+            # coefficient
+            coef = lr.coef_[0][0]
 
 
-        # polynomial regression
-        x = x.reshape(1, -1)
-        y = y.reshape(1, -1)
-        x = x.tolist()
-        y = y.tolist()
+            # polynomial regression
+            x = x.reshape(1, -1)
+            y = y.reshape(1, -1)
+            x = x.tolist()
+            y = y.tolist()
 
-        x = x[0]
-        y = y[0]
+            x = x[0]
+            y = y[0]
 
-        poly_fit = np.poly1d(np.polyfit(x, y, 2))
-        xx = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]
-        plt.plot(xx, poly_fit(xx), c='r', linestyle='-')
+            poly_fit = np.poly1d(np.polyfit(x, y, 2))
+            xx = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500,550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100]
+            plt.plot(xx, poly_fit(xx), c='r', linestyle='-')
 
-        # invert x-axis to start with bigger values on the left
-        ax.invert_xaxis()
-        i=i+1
+            # invert x-axis to start with bigger values on the left
+            ax.invert_xaxis()
+            i=i+1
 
-    plt.show()
-
+        plt.show()
     return
 
 
@@ -232,6 +238,7 @@ def removeNans(x, y):
 def Gauss(x, A, B):
     y = A*np.exp(-1*B*x**2)
     return y
+
 
 def hypso_dem(dems, bins, ref_dem):
     """
@@ -276,7 +283,7 @@ def hypso_dem(dems, bins, ref_dem):
     print('ransac done')
     return hypso
 
-def regressionAlg(algorithm, data, thresholds, glacier_name, pltshow, pltsave):
+def regressionAlg(algorithm, data, glacier_name, pltshow, pltsave):
     """
 
     Params
@@ -343,7 +350,6 @@ def regressionAlg(algorithm, data, thresholds, glacier_name, pltshow, pltsave):
     plt.ylabel("Response")
 
     if pltshow:
-        #plt.legend(loc="lower right")
         plt.show()
 
     return coef
@@ -353,20 +359,12 @@ def regression(algorithm, icesat_path, surgenosurge, surgevalues, threshold, gla
     # load data
     data = xr.load_dataset(icesat_path)
 
-    # todo: a better way to split based on statistics and stuff
-    # for example lower 1/5, upper 1/5 and in between
-    # or thirds
-    # min, max, avg, median
-    # figure out some statistics like lowest and highest point of glacier, elevation bins etc.
-    # and based on that determine the thresholds
-    thresholds = [400, 500]
-
-    # loop through the years and do ransac both for high and low elevation
+    # group by hydrological years
     years = np.unique(data.year_int.values)
     for year in years:
         if (year != years[-1]): # | (year != years[0]):
             subset = icesat.groupby_hydroyear(data, year)
-            coef = regressionAlg(algorithm, subset, thresholds, glacier_name, pltshow, pltsave)
+            coef = regressionAlg(algorithm, subset, glacier_name, pltshow, pltsave)
 
             # append coefficient to values df
             surgevalues[year][algorithm] = coef
@@ -386,3 +384,190 @@ def updateSurgeSum(df):
         df[year]['sum'] = df[year]['hypso'] + df[year]['ransac']
 
     return df
+
+def clusterAnalysis(icesat_path, surgenosurge, surgevalues, glacier_name, pltshow, pltsave,
+                    dbscan=True, kmeans=False, gaussianmixture=False, spectralclustering=False):
+
+    """
+    i dont think a cluster analysis is the way to go - usually the surge is only a couple of points
+    and it is not really "deconnected" from the rest of the data points so the pts are usually
+    either considered outliers (not it any cluster) or connected with other pts that are not
+    part of the surge
+    """
+
+    # load data
+    data = xr.open_dataset(icesat_path)
+
+    # subset only lower half of the glacier
+    middle = (max(data['h']) + min(data['h']))/2
+    data = data.where(data['h'] < middle)
+
+    plt.subplots(2, 2)
+
+    i = 1
+    # group by hydrological years
+    years = np.unique(data.year_int.values)
+    for year in years:
+        if (year != years[-1]): # | (year != years[0]):
+            if i == 5:
+                continue
+            subset = icesat.groupby_hydroyear(data, year)
+            x = subset['h']
+            y = subset['dh']
+
+            # convert to array of vectors
+            X = toVectorArray(x, y)
+
+            plt.subplot(2, 2, i)
+            if dbscan:
+                algDBSCAN(X, 2)  # todo what if there is too many holes in data so it does not identify the surge as a cluster?
+
+            if gaussianmixture:
+                algGaussianMixture(X)
+
+            if kmeans:
+                algKMeans(X)
+
+            if spectralclustering:
+                algSpectralClustering(X)
+
+
+            i = i + 1
+    plt.tight_layout()
+    plt.show()
+
+    return
+
+
+def algKMeans(X):
+    # run kMeans
+    kmeans = KMeans(n_clusters=2, n_init="auto").fit_predict(X)
+    plt.scatter(X[:, 0], X[:, 1], c=kmeans)
+    return
+
+
+def algSpectralClustering(X):
+    # not working at all for some reason
+    clustering = SpectralClustering(n_clusters=2).fit_predict(X)
+    plt.scatter(X[:, 0], X[:, 1], c=clustering)
+    return
+
+
+def algGaussianMixture(X):
+    y_pred = GaussianMixture(n_components=3).fit_predict(X)
+    plt.scatter(X[:, 0], X[:, 1], c=y_pred)
+    return
+
+
+def gmm_bic_score(estimator, X):
+    """Callable to pass to GridSearchCV that will use the BIC score."""
+    # Make it negative since GridSearchCV expects a score to maximize
+    return -estimator.bic(X)
+
+
+def algDBSCAN(X, n_clusters):
+    # run DBSCAN
+    db = DBSCAN(eps=40, min_samples=5).fit(X)
+    labels = db.labels_
+
+    # Number of clusters in labels, ignoring noise if present.
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    print("Estimated number of clusters: %d" % n_clusters_)
+    print("Estimated number of noise points: %d" % n_noise_)
+    unique_labels = set(labels)
+    core_samples_mask = np.zeros_like(labels, dtype=bool)
+    core_samples_mask[db.core_sample_indices_] = True
+
+    colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            # Black used for noise.
+            col = [0, 0, 0, 1]
+
+        class_member_mask = labels == k
+
+        xy = X[class_member_mask & core_samples_mask]
+        plt.plot(
+            xy[:, 0],
+            xy[:, 1],
+            ".",
+            c=tuple(col),
+            markersize=6,
+        )
+
+        xy = X[class_member_mask & ~core_samples_mask]
+        plt.plot(
+            xy[:, 0],
+            xy[:, 1],
+            ".",
+            c=tuple(col),
+            markersize=2,
+        )
+
+    plt.title(f"clusters: {n_clusters_}")
+
+    return
+
+
+def toVectorArray(x, y):
+    # initiate empty list
+    vectors = []
+    # loop through indices
+    for i in x.index.values:
+        xx = x.loc[i].values.item()
+        yy = y.loc[i].values.item()
+
+        vectors.append([xx, yy])
+
+    arr = np.array(vectors)
+
+    return arr
+
+def leastSquares(icesat_path):
+    # least squares on lower part of dataset
+
+    # load data
+    data = xr.open_dataset(icesat_path)
+
+    # subset
+    #middle = (min(data['h']) + max(data['h']))/2
+    #data = data.where(data['h']<middle)
+
+    plt.subplots(2, 2)
+    # group by hydrological years
+    years = np.unique(data.year_int.values)
+    i = 1
+    for year in years:
+        if (year != years[-1]):  # | (year != years[0]):
+            if i == 5:
+                continue
+            subset = icesat.groupby_hydroyear(data, year)
+            x = subset['h']
+            y = subset['dh']
+
+            alpha = curve_fit(lsFun, xdata=x, ydata=y)[0]
+            print(alpha)
+
+            # plot
+            plt.subplot(2, 2, i)
+            plt.scatter(subset['h'], subset['dh'])
+            plt.plot(x, alpha[0] * x + alpha[1], 'r')
+
+        i = i + 1
+    plt.show()
+
+    # todo move plotting
+    # todo return 1/0 surge/notsurge
+
+    return
+
+
+def lsFun(x, a, b):
+    y = a*x + b
+    return y
+
+
+# todo spectral clustering BIRCH, others?
+# https://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_comparison.html#sphx-glr-auto-examples-cluster-plot-cluster-comparison-py
