@@ -3,15 +3,12 @@ import numpy as np
 import warnings
 import rasterio as rio
 from matplotlib import pyplot as plt
-from sklearn import linear_model, metrics
+from sklearn import linear_model
 from sklearn.cluster import KMeans, DBSCAN, SpectralClustering
 from sklearn.mixture import GaussianMixture
-from sklearn.model_selection import GridSearchCV
-from matplotlib.patches import Ellipse
-from scipy import linalg
 from scipy.optimize import curve_fit
-import pandas as pd
 
+from svalbardsurges.controllers import pltshow, pltsave, hypso, ransac, linearregression
 
 # Catch a deprecation warning that arises from skgstat when importing xDEM
 with warnings.catch_warnings():
@@ -20,9 +17,36 @@ with warnings.catch_warnings():
     import xdem
 
 from svalbardsurges.inputs import icesat
+from pathlib import Path
 
 
-def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
+def groupByHydroYear(input_path, year):
+    """
+
+    :param input_path:
+    :return:
+    """
+
+    # cache
+    output_path = Path(f'cache/{input_path.stem}{year}.nc')
+    if output_path.is_file():
+        return output_path
+
+    # open data
+    data = xr.open_dataset(input_path)
+
+    # split data by hydrosilvestr
+    hydrosilvestr = year * 10000 + 1031
+    subset = data.where(
+        (data.date_int.values > hydrosilvestr - 10000) & (data.date_int.values <= hydrosilvestr))
+    subset = subset.dropna('index')
+
+    subset.to_netcdf(output_path)
+
+    return output_path
+
+
+def icesatDEMDifference(icesat_path, dem_path, output_path):
     """
     Get elevation difference between ICESat-2 data and reference DEM.
 
@@ -39,10 +63,11 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
     and "dh" (difference between ICESat-2 and reference DEM)
     """
 
-    # if subset already exists return path
-    if output_path.is_file():
-        return output_path
+    # cache
+    #if output_path.is_file():
+    #    return output_path
 
+    # open data
     data = xr.open_dataset(icesat_path)
 
     with rio.open(dem_path) as raster, warnings.catch_warnings():
@@ -57,10 +82,13 @@ def icesat_DEM_difference(dem_path, icesat_path, glacier_outline, output_path):
         )
 
     # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
-    data["dh"] = data["h"] - data["dem_elevation"] - 31.55 # todo a bit better correction
+    if data['h_te_best_fit'].size > 0:
+        data["h"] = data["h_te_best_fit"]
+    data["dh"] = data["h"] - data["dem_elevation"] - 31.55  # todo a bit better correction
+    data = data.drop_vars(['date_str'])
 
     if data.dropna('index')['dh'].size == 0:
-        return 'empty'
+        return 'nodata'
 
     # save as netcdf file
     data.to_netcdf(output_path)
@@ -81,7 +109,7 @@ def create_bins(data_path):
     return bins
 
 
-def icesatHypso(input_path, bins, surgenosurge, surgevalues, threshold):
+def icesatHypso(icesat_data, bins):
     """
     Hypsometric binning of glacier elevation changes.
 
@@ -100,114 +128,98 @@ def icesatHypso(input_path, bins, surgenosurge, surgevalues, threshold):
     """
 
     # open data
-    data = xr.open_dataset(input_path)
+    data = icesat_data
 
-    # empty dictionary to append binned elevation differences by year
-    hypso_bins = {}
+    hypso = xdem.volume.hypsometric_binning(
+            ddem=data['dh'],
+            ref_dem=data['dem_elevation'],
+            kind="custom",
+            bins=bins,
+            aggregation_function=np.nanmean
+    )
 
-    years = np.unique(data.year_int.values)
-
-    for year in years:
-        if year != years[-1]:
-            y = year * 10000
-            hydrosilvestr = y + 1031  # create hydrosilvestr, for example 20181031 (October 31st 2018)
-            subset = data.where((data.date_int.values > hydrosilvestr) & (data.date_int.values <= hydrosilvestr+10000))
-            year = year + 1
-
-            try:
-                hypso = xdem.volume.hypsometric_binning(
-                    ddem=subset['dh'],
-                    ref_dem=subset['dem_elevation'],
-                    kind="custom",
-                    bins=bins,
-                    aggregation_function=np.nanmean
-                )
-            except:
-                surgenosurge[year]['hypso'] = -999
-                surgevalues[year]['hypso'] = -999
-                return hypso_bins, surgenosurge, surgevalues
-
-            # append data to dictionary
-            hypso_bins[year] = hypso
-
-            # append elevation change in lower part of glacier to values df
-            surgevalues[year]['hypso'] = hypso_bins[year].iloc[0].value
-
-            # if surge, append 1 to results, if not surge append 0 to results
-            if hypso_bins[year].iloc[0].value > threshold:
-                surgenosurge[year]['hypso'] = 1
-            else:
-                surgenosurge[year]['hypso'] = 0
-
-    return hypso_bins, surgenosurge, surgevalues
+    return hypso
 
 
-def evaluateHypso(hypso, pltshow):
+def linRegHypso(hypso):
+    # prepare data
+    x = hypso.index.mid
+    y = hypso.value
+
+    # remove Nans from list
+    x, y = removeNans(x, y)
+
+    # if less than more than 7 bins are empty then nodata
+    if len(y) < 3:
+        return np.nan, np.nan
+
+    # linear regression on binned data
+    x = x.reshape(-1, 1)
+    y = y.reshape(-1, 1)
+
+    # fit linear model
+    lr = linear_model.LinearRegression()
+    lr.fit(x, y)
+
+    line_X = np.arange(x.min(), x.max())[:, np.newaxis]
+    line_y = lr.predict(line_X)
+
+    # plot
+    #plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
+
+    # coefficient
+    slope = lr.coef_[0][0]
+    intercept = lr.intercept_[0]
+
+    return slope, intercept
+
+
+def plotHypso(hypso, glacier_name):
     # todo least squares, figure out other means of identifying outliers (surges)
     # todo leave evaluating, move plotting
+
     if pltshow:
-        # intitiate plot
-        plt.subplots(2, 2)
+        # initiate plot
+        fig, axs = plt.subplots(2, 2)
+        plt.suptitle(f'{glacier_name}')
 
-        i = 1
-        # loop through years in hypso dictionary
-        for year in hypso:
-            # call subplot
-            ax = plt.subplot(2, 2, i)
+        # prepare data
+        x = hypso.index.mid
+        y = hypso.value
 
-            # prepare data
-            x = hypso[year].index.mid
-            y = hypso[year].value
+        # remove Nans from list
+        x, y = removeNans(x, y)
 
-            # remove Nans from list
-            x, y = removeNans(x, y)
+        # now try to put a curve through it
+        from scipy.optimize import curve_fit
 
-            # now try to put a curve through it
-            from scipy.optimize import curve_fit
-            parameters, covariance = curve_fit(Gauss, x, y) # todo least squares
-            fit_A = parameters[0]
-            fit_B = parameters[1]
+        # plot data
+        plt.scatter(x, y, color='orange', marker='.')  # points
+        # linear regression scikit
+        x = x.reshape(-1, 1)
+        y = y.reshape(-1, 1)
 
-            fit_y = Gauss(y, fit_A, fit_B)
+        # fit linear model
+        lr = linear_model.LinearRegression()
+        lr.fit(x, y)
 
-            # plot data
-            plt.scatter(x, y, color='orange', marker='.')  # points
-            plt.plot(x, fit_y, '-', label='fit')  # curve
+        line_X = np.arange(x.min(), x.max())[:, np.newaxis]
+        line_y = lr.predict(line_X)
 
-            # linear regression scikit
-            x = x.reshape(-1, 1)
-            y = y.reshape(-1, 1)
-            lr = linear_model.LinearRegression()
-            lr.fit(x, y)
+        # plot
+        plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
 
-            line_X = np.arange(x.min(), x.max())[:, np.newaxis]
-            line_y = lr.predict(line_X)
-
-            # plot
-            plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
-
-            # coefficient
-            coef = lr.coef_[0][0]
+        # coefficient
+        coef = lr.coef_[0][0]
 
 
-            # polynomial regression
-            x = x.reshape(1, -1)
-            y = y.reshape(1, -1)
-            x = x.tolist()
-            y = y.tolist()
+        fig.supxlabel('elevation bins')
+        fig.supylabel('average elevation change')
+        plt.tight_layout()
 
-            x = x[0]
-            y = y[0]
+        if pltshow:
+            plt.show()
 
-            poly_fit = np.poly1d(np.polyfit(x, y, 2))
-            xx = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500,550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100]
-            plt.plot(xx, poly_fit(xx), c='r', linestyle='-')
-
-            # invert x-axis to start with bigger values on the left
-            ax.invert_xaxis()
-            i=i+1
-
-        plt.show()
     return
 
 
@@ -280,10 +292,10 @@ def hypso_dem(dems, bins, ref_dem):
         # hypsometric binning
         hypso[year] = xdem.volume.hypsometric_binning(ddem=d_dem.data, ref_dem=ref_dem.data, kind='custom', bins=bins)
 
-    print('ransac done')
     return hypso
 
-def regressionAlg(algorithm, data, glacier_name, pltshow, pltsave):
+
+def ransacAlg(data, glacier_name):
     """
 
     Params
@@ -297,11 +309,11 @@ def regressionAlg(algorithm, data, glacier_name, pltshow, pltsave):
 
     # do it only on the whole glacier (not split by bins)
     if data.index.size == 0:
-        return -999
+        return np.nan
 
     year = max(data.year_int.values)
 
-    plt.suptitle(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}')
+    #plt.suptitle(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}')
 
     lw = 2  # linewidth for plots
 
@@ -309,73 +321,116 @@ def regressionAlg(algorithm, data, glacier_name, pltshow, pltsave):
     X = data.h.values.reshape(-1, 1)
     y = data.dh.values.reshape(-1, 1)
 
-    if algorithm == "linreg":
-        # Fit line
-        lr = linear_model.LinearRegression()
-        lr.fit(X, y)
+    # Robustly fit data with ransac algorithm
+    ransac = linear_model.RANSACRegressor(max_trials=100)
+    ransac.fit(X, y)
 
-        line_X = np.arange(X.min(), X.max())[:, np.newaxis]
-        line_y = lr.predict(line_X)
+    inlier_mask = ransac.inlier_mask_
+    outlier_mask = np.logical_not(inlier_mask)
 
-        # plot
-        plt.scatter(X, y, color="yellowgreen", marker='.')
-        plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
+    # Predict data of estimated models
+    line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+    line_y_ransac = ransac.predict(line_X)
 
-        # coefficient
-        coef = lr.coef_[0][0]
+    # PLOT
+    #plt.scatter(X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers")
+    #plt.scatter(X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers")
+    #plt.plot(line_X, line_y_ransac, color="cornflowerblue", linewidth=lw, label="RANSAC regressor")
 
-    # RANSAC
-    if algorithm == "ransac":
-        # Robustly fit data with ransac algorithm
-        ransac = linear_model.RANSACRegressor(max_trials=100)
-        ransac.fit(X, y)
+    # ransac coefficient
+    coef = ransac.estimator_.coef_[0][0]
 
-        inlier_mask = ransac.inlier_mask_
-        outlier_mask = np.logical_not(inlier_mask)
+    #plt.title(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}, {coef}')
+    #plt.xlabel("Input")
+    #plt.ylabel("Response")
 
-        # Predict data of estimated models
-        line_X = np.arange(X.min(), X.max())[:, np.newaxis]
-        line_y_ransac = ransac.predict(line_X)
+    return X, y, inlier_mask, outlier_mask, line_X, line_y_ransac, coef
 
-        # PLOT
-        plt.scatter(X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", label="Inliers")
-        plt.scatter(X[outlier_mask], y[outlier_mask], color="gold", marker=".", label="Outliers")
-        plt.plot(line_X, line_y_ransac, color="cornflowerblue", linewidth=lw, label="RANSAC regressor")
+def linRegAlg(data, glacier_name):
 
-        # ransac coefficient
-        coef = ransac.estimator_.coef_[0][0]
+    if data.index.size == 0:
+        return 'nodata'
 
-    plt.title(f'{str(year - 1)[:4]}-{str(year)[:4]}, {glacier_name}, {algorithm}, {coef}')
-    plt.xlabel("Input")
-    plt.ylabel("Response")
+    # reshape arrays
+    X = data.h.values.reshape(-1, 1)
+    y = data.dh.values.reshape(-1, 1)
 
-    if pltshow:
-        plt.show()
+    # Fit line
+    lr = linear_model.LinearRegression()
+    lr.fit(X, y)
+
+    line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+    line_y = lr.predict(line_X)
+
+    # plot
+    # plt.scatter(X, y, color="yellowgreen", marker='.')
+    # plt.plot(line_X, line_y, color="navy", linewidth=lw, label="Linear regressor")
+
+    # coefficient
+    coef = lr.coef_[0][0]
+    return X, y, line_X, line_y, coef
+
+
+def linreg(data):
+
+    if data.index.size == 0:
+        return np.nan
+
+    # reshape arrays
+    X = data.h.values.reshape(-1, 1)
+    y = data.dh.values.reshape(-1, 1)
+
+    # Fit line
+    lr = linear_model.LinearRegression()
+    lr.fit(X, y)
+
+    line_X = np.arange(X.min(), X.max())[:, np.newaxis]
+    line_y = lr.predict(line_X)
+
+    coef = lr.coef_[0][0]
+
+    #plt.scatter(X, y, color="orange", marker='.', s=2)
+    #plt.plot(line_X, line_y, color="navy", linewidth=2, label="Linear regressor")
+    #ax.invert_xaxis()
 
     return coef
 
-def regression(algorithm, icesat_path, surgenosurge, surgevalues, threshold, glacier_name, pltshow, pltsave):
 
-    # load data
-    data = xr.load_dataset(icesat_path)
+def ransac(data, glacier_name):
+
+    fig, axs = plt.subplots(2, 2)
+
+    coefs = {}
 
     # group by hydrological years
     years = np.unique(data.year_int.values)
+    i=1
     for year in years:
         if (year != years[-1]): # | (year != years[0]):
             subset = icesat.groupby_hydroyear(data, year)
-            coef = regressionAlg(algorithm, subset, glacier_name, pltshow, pltsave)
+            X, y, inlier_mask, outlier_mask, line_X, line_y_ransac, coef = ransacAlg(subset, glacier_name)
 
+            # plot
+            ax = plt.subplot(2, 2, i)
+            plt.scatter(X[inlier_mask], y[inlier_mask], color="yellowgreen", marker=".", s=2, label="Inliers")
+            plt.scatter(X[outlier_mask], y[outlier_mask], color="orange", marker=".", s=2, label="Inliers")
+            plt.plot(line_X, line_y_ransac, color="cornflowerblue", linewidth=2, label="RANSAC regressor")
+
+            ax.invert_xaxis()
+            plt.title(f'{year}')
+
+            i=i+1
             # append coefficient to values df
-            surgevalues[year][algorithm] = coef
+            coefs[year] = coef
 
-            # update 1 or 0 for surge/not surge based on chosen threshold
-            if coef > threshold:
-                surgenosurge[year][algorithm] = 1
-            else:
-                surgenosurge[year][algorithm] = 0
+    plt.suptitle(f'{glacier_name}')
+    fig.supxlabel('elevation')
+    fig.supylabel('elevation change since 2010')
+    plt.tight_layout()
+    if pltshow:
+        plt.show()
 
-    return surgenosurge, surgevalues
+    return coefs
 
 
 def updateSurgeSum(df):
@@ -385,7 +440,8 @@ def updateSurgeSum(df):
 
     return df
 
-def clusterAnalysis(icesat_path, surgenosurge, surgevalues, glacier_name, pltshow, pltsave,
+
+def clusterAnalysis(data, glacier_name,
                     dbscan=True, kmeans=False, gaussianmixture=False, spectralclustering=False):
 
     """
@@ -395,14 +451,12 @@ def clusterAnalysis(icesat_path, surgenosurge, surgevalues, glacier_name, pltsho
     part of the surge
     """
 
-    # load data
-    data = xr.open_dataset(icesat_path)
-
     # subset only lower half of the glacier
     middle = (max(data['h']) + min(data['h']))/2
     data = data.where(data['h'] < middle)
 
-    plt.subplots(2, 2)
+    fig, axs = plt.subplots(2, 2)
+    plt.suptitle(f'{glacier_name}: DBSCAN')
 
     i = 1
     # group by hydrological years
@@ -418,7 +472,8 @@ def clusterAnalysis(icesat_path, surgenosurge, surgevalues, glacier_name, pltsho
             # convert to array of vectors
             X = toVectorArray(x, y)
 
-            plt.subplot(2, 2, i)
+            ax = plt.subplot(2, 2, i)
+
             if dbscan:
                 algDBSCAN(X, 2)  # todo what if there is too many holes in data so it does not identify the surge as a cluster?
 
@@ -431,10 +486,16 @@ def clusterAnalysis(icesat_path, surgenosurge, surgevalues, glacier_name, pltsho
             if spectralclustering:
                 algSpectralClustering(X)
 
+            plt.title(f'{str(year + 1)[:4]}')
+            ax.invert_xaxis()
 
             i = i + 1
+
+    fig.supxlabel('elevation')
+    fig.supylabel('elevation change since 2010')
     plt.tight_layout()
-    plt.show()
+    if pltshow:
+        plt.show()
 
     return
 
@@ -450,6 +511,7 @@ def algSpectralClustering(X):
     # not working at all for some reason
     clustering = SpectralClustering(n_clusters=2).fit_predict(X)
     plt.scatter(X[:, 0], X[:, 1], c=clustering)
+
     return
 
 
@@ -525,44 +587,6 @@ def toVectorArray(x, y):
 
     return arr
 
-def leastSquares(icesat_path):
-    # least squares on lower part of dataset
-
-    # load data
-    data = xr.open_dataset(icesat_path)
-
-    # subset
-    #middle = (min(data['h']) + max(data['h']))/2
-    #data = data.where(data['h']<middle)
-
-    plt.subplots(2, 2)
-    # group by hydrological years
-    years = np.unique(data.year_int.values)
-    i = 1
-    for year in years:
-        if (year != years[-1]):  # | (year != years[0]):
-            if i == 5:
-                continue
-            subset = icesat.groupby_hydroyear(data, year)
-            x = subset['h']
-            y = subset['dh']
-
-            alpha = curve_fit(lsFun, xdata=x, ydata=y)[0]
-            print(alpha)
-
-            # plot
-            plt.subplot(2, 2, i)
-            plt.scatter(subset['h'], subset['dh'])
-            plt.plot(x, alpha[0] * x + alpha[1], 'r')
-
-        i = i + 1
-    plt.show()
-
-    # todo move plotting
-    # todo return 1/0 surge/notsurge
-
-    return
-
 
 def lsFun(x, a, b):
     y = a*x + b
@@ -571,3 +595,124 @@ def lsFun(x, a, b):
 
 # todo spectral clustering BIRCH, others?
 # https://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_comparison.html#sphx-glr-auto-examples-cluster-plot-cluster-comparison-py
+
+
+def classifyRF(df, training_data):
+    from sklearn.ensemble import RandomForestClassifier
+
+    plt.close('all')
+    #plt.scatter(df['slope'], df['max_dh'], c=df['year'])
+    #plt.show()
+
+    # remove nans from datasets
+    df = df.dropna(axis='index')
+    training_data = training_data.dropna(axis='index')
+
+    # remove glaciers in training dataset from dataset
+    for i in df.index.values:
+        # get glacier id of
+        glac_id = df._get_value(i, 'glacier_id')
+        if glac_id in training_data.glacier_id.values:
+            df = df.drop(index=i)
+
+    # Split the data into features (X) and target (y)
+    X = df.drop(columns=['surging', 'glacier_id', 'year', 'geom', 'name'])
+    y = df.surging.replace({True: 1, False: 0})
+
+    # split training dataset into features and target
+    X_train = training_data.drop(columns=['surging', 'glacier_id', 'year', 'geom', 'name'])
+    y_train = training_data.surging.replace({True: 1, False: 0})
+
+    rf = RandomForestClassifier()
+    rf.fit(X_train, y_train)
+    print(rf.predict(X))
+
+    X['surging'] = rf.predict(X)
+    import pandas as pd
+    df = df.drop(columns=['surging'])
+    result = pd.concat([df, X], axis=1, join='inner')
+
+
+    for index, row in result.iterrows():
+        polygon = row['geom']
+        plt.plot(*polygon.exterior.xy, color='grey')
+
+    plt.show()
+
+    return
+
+
+def fillKnownSurges(data):
+    # set surges to True in xarray dataset
+
+    # load years
+    years = data.year.values
+
+    # create empty dictionary
+    surges = {}
+
+    # loop through years
+    for year in years:
+        # append empty list for each year
+        surges[str(year)[:4]] = []
+
+    # open csv file with surges between 2017 and 2022
+    import csv
+    with open('cache/surge_table.csv', newline="") as csvfile:
+        file = csv.reader(csvfile, delimiter=",")
+        n = 0
+        for row in file:
+            # skip first row (column labels)
+            if n == 0:
+                n = n + 1
+                continue
+
+            # load id, start date and end date from csv file
+            id = row[1]
+            startyear = row[6]
+            endyear = row[7]
+
+            # if one of the surge start or surge end is not known
+            if (startyear == "") | (endyear == ""):
+                # if both dates are unknown
+                if (startyear == "") & (endyear == ""):
+                    # don't do anything
+                    continue
+                # if only start year is unknown
+                elif (startyear == "") & (endyear != ""):
+                    # and append glacier id to end year
+                    if str(endyear)[:4] != "2017":
+                        surges[str(endyear)[:4]].append(id)
+                # if the other way around
+                elif (startyear != "") & (endyear == ""):
+                    #  append glacier id to start year
+                    if str(startyear)[:4] != "2017":
+                        surges[str(startyear)[:4]].append(id)
+
+            # if both start year and end year are known
+            if (startyear != "") & (endyear != ""):
+                r = float(endyear) - float(startyear)
+                y = float(startyear)
+                for dy in range(0, int(r)):
+                    y = y + dy
+                    if (y > 2017) & (y < 2023):
+                        surges[str(y)[:4]].append(id)
+
+    for year in surges:
+        for glacier in surges[year]:
+            if glacier in list(data["glacier_id"].values):
+                data["surging"].loc[{"year": int(year), "glacier_id": glacier}] = True
+
+    return data
+
+def createTrainingDataset(data):
+    # create dataset with only surging glaciers
+    surging_glaciers = data.where((data["surging"] == True) | (data['glacier_id'] == 'G018079E77679N') |
+                                  (data['glacier_id'] == 'G017944E77626N') | (data['glacier_id'] == 'G017525E77773N' ))
+    surging_glaciers.dropna(subset=['surging'], inplace=True)
+
+    # add data for glaciers that are not surging
+
+    # todo choose half of this dataset to create training data (the other half will go for validation)
+
+    return surging_glaciers

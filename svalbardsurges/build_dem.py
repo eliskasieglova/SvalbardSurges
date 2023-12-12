@@ -53,7 +53,7 @@ def align_bounds(
     return rio.coords.BoundingBox(**bounds)
 
 def get_bounds(
-    region: str = "heerland", res: tuple[float, float] | None = None, half_mod: bool = False
+    region: str = "svalbard", res: tuple[float, float] | None = None, half_mod: bool = False
 ) -> rio.coords.BoundingBox:
     """
     Get the bounding coordinates of the output DEMs.
@@ -70,7 +70,7 @@ def get_bounds(
     """
 
     region_bounds = {
-        "svalbard": {"left": 375211, "bottom": 8486823, "right": 527640, "top": 9008372},
+        "svalbard": {"left": 375211, "bottom": 8486823, "right": 763281, "top": 9008372},
         "nordenskiold": {"left": 443002.5, "bottom": 8626007.5, "right": 560242.5, "top": 8703007.5},
         "heerland": {"left": 537010, "bottom": 8602780, "right": 582940, "top": 8656400}
     }

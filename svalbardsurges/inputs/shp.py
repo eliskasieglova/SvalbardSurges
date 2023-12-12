@@ -34,7 +34,7 @@ def getIDs(filepath, id_attr):
     return glacier_ids
 
 
-def load_shp(file_path, id_attribute_name, glacier_id):
+def load_shp(file_path, id_attribute, glacier_id):
     """
     Loads a single glacier as shapefile from the GAO dataset.
 
@@ -42,8 +42,6 @@ def load_shp(file_path, id_attribute_name, glacier_id):
     ----------
     - file_path
         path to shapefile
-    - glacier name
-        name of glacier we want to load as string
 
     Returns
     -------
@@ -51,12 +49,14 @@ def load_shp(file_path, id_attribute_name, glacier_id):
     """
 
     filepath = Path(file_path)
-    output_file = Path(f'cache/shapefiles/{filepath.stem}_{glacier_id}.shp')
+    output_file = Path(f'cache/shapefiles/{glacier_id}.shp')
 
     # if glacier outline is cached simply load the shapefile
     if output_file.is_file():
+        # todo handle when shapefile is empty (cannot read)
         glacier_outline = gpd.read_file(output_file).to_crs(32633)
         return glacier_outline
+
 
     # if glacier outline is not cached, load it and save it
 
@@ -65,34 +65,47 @@ def load_shp(file_path, id_attribute_name, glacier_id):
 
     # subset by chosen glacier ID (different for gao and rgi because of different id attribute format: str vs. float)
     if filepath.stem == 'gao':
-        glacier_outline = shp.query(f"{id_attribute_name}=={glacier_id}")
+        glacier_outline = shp.query(f"{id_attribute}=={glacier_id}")
 
     elif filepath.stem == 'rgi':
-        glacier_outline = shp.query(f"{id_attribute_name}=='{glacier_id}'")
+        glacier_outline = shp.query(f"{id_attribute}=='{glacier_id}'")
 
     # save as shp
     glacier_outline.to_file(filename=output_file)
 
     return glacier_outline
 
-def withinBBox(bbox, filepath, output_file):
 
-    # if glacier outline is cached simply load the shapefile
+def withinBBox(bbox, filepath, id_attr, output_file):
+
+    # if glacier outline is cached simply load the shapefile and return ids
     if output_file.is_file():
-        subset = gpd.read_file(output_file).to_crs(32633)
-        return subset
+        shp = gpd.read_file(output_file).to_crs(32633)
 
-    # read shapefile
-    shp = gpd.read_file(filepath).to_crs(32633)
+        glacier_ids = []
+        for i in shp[id_attr]:
+            glacier_ids.append(i)
 
-    # convert bbox lat lon to easting northing
-    myproj = Proj("+proj=utm +zone=33 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs")  # assign projection
-    eastings, northings = myproj((bbox[0], bbox[2]), (bbox[1], bbox[3]))
+        return glacier_ids
 
-    # select glaciers within bounding box
-    subset = shp.cx[eastings[0]:eastings[1], northings[0]:northings[1]]
+    else:
+        # read shapefile
+        shp = gpd.read_file(filepath).to_crs(32633)
 
-    # cache subset
-    subset.to_file(filename=output_file)
+        # convert bbox lat lon to easting northing
+        myproj = Proj("+proj=utm +zone=33 +north +ellps=WGS84 +datum=WGS84 +units=m +no_defs")  # assign projection
+        eastings, northings = myproj((bbox[0], bbox[2]), (bbox[1], bbox[3]))
 
-    return subset
+        # select glaciers within bounding box
+        from shapely.geometry import Polygon
+        #polygon = Polygon([(bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[2], bbox[3]), (bbox[0], bbox[3])])
+        subset = shp.cx[eastings[0]:eastings[1], northings[0]:northings[1]]
+
+        glacier_ids = []
+        for i in subset[id_attr]:
+            glacier_ids.append(i)
+
+        # cache subset
+        subset.to_file(filename=output_file)
+
+        return glacier_ids

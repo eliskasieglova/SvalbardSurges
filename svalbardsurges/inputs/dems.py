@@ -12,6 +12,8 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", numba.NumbaDeprecationWarning)
     import xdem
 
+from svalbardsurges.controllers import pltshow, pltsave
+
 def load_dem(input_path, spatial_extent, label):
     """
     Loads subset of DEM using the specified bounds.
@@ -48,7 +50,7 @@ def load_dem(input_path, spatial_extent, label):
 
     return vrt_cropped_filepath
 
-def mask_dem(dem_path, glacier_outline, label, pltshow) -> Path:
+def mask_dem(dem_path, glacier_outline, label) -> Path:
     """
     Masks DEM data by the glacier area outlines.
 
