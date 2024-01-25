@@ -13,7 +13,7 @@ if socket.gethostname() == "DESKTOP-09DFBN6":
 
 sys.path += ["../ADSvalbard", "../projectfiles"]
 import adsvalbard.rasters
-from svalbardsurges import plotting
+from svalbardsurges import plotting as plotting
 from svalbardsurges import analysis
 from svalbardsurges import download
 from svalbardsurges import build_dem
@@ -21,7 +21,6 @@ from svalbardsurges.inputs import dems
 from svalbardsurges.inputs import shp
 from svalbardsurges.inputs import icesat
 from svalbardsurges.inputs import read_icesat
-import svalbardsurges.controllers
 
 
 def main():
@@ -30,13 +29,20 @@ def main():
     # ---------------------------------------
 
     # ICESat-2 download specifications
-    icesat_product = 'ATL08'  # or ATL06 or ATL03
+    icesat_product = 'ATL06'  # ATL06 or ATL08
     date_range = ['2018-10-14', '2023-11-10']
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
-    glacier_inventory = 'rgi'  # 'rgi' or 'gao'. will assign download url and filenames accordingly
-    area = "svalbard"
+    area = "heerland"
 
-    bboxes = {"svalbard": [5, 75, 40, 82], "heerland": [15.7, 77.35, 18.6, 78]}
+    bboxes = {"svalbard": [5, 75, 40, 82],
+              "heerland": [15.7, 77.35, 18.6, 78],
+              "south": [5, 75, 40, 78],
+              "northwest": [10.72, 78.11, 15.6, 80.09],
+              "northeast": [15.49, 78.02, 22.77, 80.13],
+              "nordaustland": [17.86, 79.25, 35.63, 80.43],
+              "barentsoya": [19.49, 77.21, 24.99, 78.61]
+              }
+
     spatial_extent = bboxes[area]
 
     # ------------------------------------------------------------------------
@@ -44,15 +50,7 @@ def main():
     # choose which parts of code will be run and which not (True = will be run, False = will not be run)
     # ------------------------------------------------------------------------
 
-    # todo as global variables?
-    hypso = True  # hypsometric binning
-    ransac = False  # RANSAC analysis
-    linearregression = True
-    kmeans = False
-    leastsquares = False
-    validate = False  # validation of dh from icesat compared to arcticdem
-
-    testdata = True  # use test d
+    from svalbardsurges.controllers import testdata, validate, rerun
     if testdata:
         icesat_filepath = Path('nordenskiold_land-is2.nc')
 
@@ -62,13 +60,10 @@ def main():
     # ------------------------------------------------------------------------
     if not os.path.isdir("cache/"):  # caching
         os.mkdir("cache/")
-
     if not os.path.isdir("figures/"):  # folder for figures (saving plots)
         os.mkdir("figures/")
-
     if not os.path.isdir('data/'):  # saving main datasets (glacier outlines, dem, icesat)
         os.mkdir('data/')
-
     if not os.path.isdir("cache/shapefiles"):  # caching
         os.mkdir("cache/shapefiles")
 
@@ -95,14 +90,11 @@ def main():
 
     # DOWNLOAD GLACIER INVENTORY (RGI or GAO)
     # variables for chosen inventory
-    if glacier_inventory == 'rgi':
-        glacinv_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/' \
-                      '3df9512e5a73841b1a23c38cf4e815e3'
-        glacinv_filepath = Path('data/rgi.zip')
-    if glacier_inventory == 'gao':
-        glacinv_url = 'https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0770_rgi_v7/regional_files/' \
-                      'RGI2000-v7.0-G/RGI2000-v7.0-G-07_svalbard_jan_mayen.zip'
-        glacinv_filepath = Path('data/gao.zip')
+    glacier_inventory = 'rgi'
+    glacinv_url = 'https://api.npolar.no/dataset/f6afca5c-6c95-4345-9e52-cfe2f24c7078/_file/' \
+                  '3df9512e5a73841b1a23c38cf4e815e3'
+    glacinv_filepath = Path('data/rgi.zip')
+    id_attr = 'glims_id'
 
     # download glacier inventory, function from Erik
     download.download_file(
@@ -111,95 +103,69 @@ def main():
         directory=glacinv_filepath.parent
     )
 
-    # choose glacier ids
-    ids = False  # 'surging' or 'gao' or 'rgi' or 'auto' or 'surging' or 'all'
-
-    # list of glacier IDs based on selected inventory
-    # todo test the results on these two glacier inventories (on the same glaciers)
-    if glacier_inventory == 'gao':
-        glacier_ids = [
-            # 12412,      # Storbreen
-            13406.1,  # Scheelebreen
-            13218.1,  # Doktorbreen
-            # 17310.1,    # Hinlopenbreen
-            # 15511.1     # Kongsbreen
-        ]
-
-    if glacier_inventory == 'rgi':
-        glacier_ids = [
-            "G018031E77579N",  # Kvalbreen
-            'G016964E77694N',  # Scheelebreen
-            'G017525E77773N',
-            'G017911E77804N',
-            'G016885E77574N',
-            'G016172E77192N',  # Storbreen
-            'G018042E78675N',   # Negribreen
-            'G017497E78572N',     # Tunabreen
-            'G023559E79453N',
-            'G016807E77171N',
-            'G015026E77342N',
-            'G013095E79037N',
-            'G025297E79771N',
-            'G016482E76791N'
-        ]
-
-    # determine name of ID attribute based on chosen glacier inventory
-    if glacier_inventory == 'rgi':
-        id_attr = 'glims_id'
-    if glacier_inventory == 'gao':
-        id_attr = 'IDENT'
-
-    # loop through all the glaciers in dataset
-    # glacier_ids = shp.getIDs(glacinv_filepath, id_attr)
-
     # select glaciers inside bounding box (spatial extent)
     glacier_ids = shp.withinBBox(spatial_extent, glacinv_filepath, id_attr, Path(f'cache/{area}_{glacier_inventory}.shp'))
 
-    if ids == 'surging':
-        glacier_ids = [
-            "G017158E77876N",
-            "G016885E77574N",
-            "G017333E77537N",
-            "G017400E77460N",
-            "G018031E77579N",
-            "G017697E77678N",
-            "G016964E77694N"
-        ]
+    #glacier_ids = ['G016964E77694N'] Scheelebreen
 
-    surging_glaciers = []
 
     # --------------------------------------------------------------------
     # START OF ACTUAL CODE
     # --------------------------------------------------------------------
-    # loop through all the glaciers
-    # save pandas to csv todo cache
-    # cache of whole results thing
+
+    # set path to save results
     resultspath = Path('cache/df_results.csv')
-    if not resultspath.is_file():
+
+    # todo what about glaciers that do not end at sea level
+
+    # if results file does not exist do the analysis
+    if rerun:
+        # count glacier sum
         gl_sum = len(glacier_ids)
         print(gl_sum)
 
         # add years as int, figure out how many years in data
         icesat_path, years = icesat.yearsInData(icesat_filepath)
+        print(years)
 
+        # set elevation bins
         bins = np.array([0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100])  # todo better bins
 
         # create empty xarray dataset
         results = xr.Dataset()
+
         # create coordinates of dataset
         results.coords["year"] = "year", np.arange(years[0], years[-1] + 1)
         results.coords["glacier_id"] = "glacier_id", glacier_ids
-        #results.coords["bin"] = "bin", bins[1:]
+
         # create data variables
-        results["geom"] = "glacier_id", np.full(gl_sum, 0, dtype=object)
-        results["name"] = "glacier_id", np.full(gl_sum, 0, dtype=object)
-        #results["avg_dh"] = ("year", "glacier_id", "bin"), np.zeros((len(years) - 1, gl_sum, len(bins[1:])))
-        #results["count"] = ("year", "glacier_id", "bin"), np.zeros((len(years) - 1, gl_sum, len(bins[1:])))
+        results["geom"] = "glacier_id", np.full(gl_sum, -999, dtype=object)
+        results["name"] = "glacier_id", np.full(gl_sum, -999, dtype=object)
+        results["dh_path"] = ("year", "glacier_id"), np.full((len(years), gl_sum), 0, dtype=object)
+        results["min_dh"] = ("year", "glacier_id"), np.full((len(years), gl_sum), -999)
+        results["max_dh"] = ("year", "glacier_id"), np.full((len(years), gl_sum), -999)
+
+
+        # create pt data variables
+        results["h"] = ("year", "glacier_id"), np.full((len(years), gl_sum), -999, dtype=object)
+        results["dh"] = ("year", "glacier_id"), np.full((len(years), gl_sum), -999, dtype=object)
+
+        # create variables for results of analysis
         results["slope"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
         results["intercept"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
         results["max_dh"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
         results["bin_max"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
-        results["surging"] = ("year", "glacier_id"), np.empty((len(years), gl_sum)) == 0  # returns bool false
+
+        # yearly change, not accumulated
+        # --> we will only have yearly change from the second year in the dataset (2019??)
+        results["slope_y"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
+        results["intercept_y"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
+        results["max_dh_y"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
+        results["bin_max_y"] = ("year", "glacier_id"), np.zeros((len(years), gl_sum))
+
+        # surging parameter (boolean)
+        results["surging_rf"] = ("year", "glacier_id"), np.empty((len(years), gl_sum)) == -999  # returns bool false
+        results["surging_threshold"] = ("year", "glacier_id"), np.empty((len(years), gl_sum)) == -999  # returns bool false
 
         # loop through years
         for year in years:
@@ -209,9 +175,13 @@ def main():
 
             # count dh on hydro year
             data_dh_path = analysis.icesatDEMDifference(data_path, dem_mosaic_path[0],
-                                                        Path(f'cache/icesat{year}dh.nc'))
+                                                        Path(f'cache/{icesat_product}{area}{year}dh.nc'))
+
+            # visualize where the glaciers are and where the icesat data is
+            plotting.plotYears(glacier_ids, glacinv_filepath, data_dh_path)
 
             n = 0
+            #glacier_ids = ['G016964E77694N']  # Scheelebreen
             for glacier_id in glacier_ids:
                 print(glacier_id)
                 n = n + 1
@@ -229,7 +199,7 @@ def main():
 
                 if glacier_name == None:
                     icesat.fillWithNans(results, year, glacier_id, bins, glacier_name, glacier_outline.iloc[0]["geometry"])
-                    #print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "nodata")
+                    print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "!!! name none")
                     continue
 
                 # correct names
@@ -243,14 +213,11 @@ def main():
                 # skip glacier if area smaller than 11 km2 (but append to results)
                 if glacier_outline.geometry.area.iloc[0] / 1e6 < 15:
                     icesat.fillWithNans(results, year, glacier_id, bins, glacier_name, glacier_outline.iloc[0]["geometry"])
-                    #print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "nodata")
+                    print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "!!! area too small")
                     continue
 
-                # todo some statistical analysis of data - if i actually have enough data for the analysis
-                # if all data is clustered then throw it out
-
                 # compute bounds of glacier outline
-                spatial_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
+                glacier_extent = dict(zip(['left', 'bottom', 'right', 'top'], glacier_outline.total_bounds))
 
                 # create directory for saving figures for each glacier separately
                 if not os.path.isdir(f"figures/{glacier_id}"):
@@ -259,20 +226,39 @@ def main():
                     os.mkdir(f"figures/{glacier_id}/{glacier_inventory}")
 
                 # subset data to glacier outline
-                subset = icesat.icesatSpatialSubset(input_path=data_dh_path, spatial_extent=spatial_extent,
+                icesat_subset_path = Path(f"cache/{glacier_name}{year}{glacier_inventory}.nc")
+                subset = icesat.icesatSpatialSubset(input_path=data_dh_path, spatial_extent=glacier_extent,
                                                     glacier_outline=glacier_outline,
-                                                    output_path=Path(f"cache/{glacier_name}{year}{glacier_inventory}.nc"))
+                                                    output_path=icesat_subset_path)
+
+                # append path to subset (for future plotting)
+                results["dh_path"].loc[{"year": year, "glacier_id": glacier_id}] = str(icesat_subset_path)
+
 
                 # if the dataset is empty then don't run the analysis
                 if type(subset) == str:
                     # append information about empty subset to results and skip running the analysis
                     icesat.fillWithNans(results, year, glacier_id, bins, glacier_name, glacier_outline.iloc[0]["geometry"])
-                    #print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "nodata")
+                    print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "!!!dataset empty")
                     continue
+
+                # append the points (for RF?? will this work??)
+                results["h"]
+
+                from matplotlib import pyplot as plt
+                plt.close('all')
+                plt.subplots(1, 2)
+                plt.subplot(1, 2, 1)
+                plt.scatter(subset.easting, subset.northing, c='orange', s=2)
+                plt.plot(*glacier_outline.iloc[0]["geometry"].exterior.xy, color='grey')
+                plt.subplot(1, 2, 2)
+                plt.scatter(subset.h, subset.dh, c='orange', s=2)
+                plt.suptitle(f'{glacier_name}, {year}, {subset.index.size}')
+                #plt.show()
 
                 # do max dh in lower part
                 lower_part = subset.where(subset.h < 400, drop=True)
-                if lower_part.index.size < 10:
+                if lower_part.index.size < 5:
                     results["max_dh"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
                 else:
                     max_dh = np.percentile(lower_part.dh.values, 90)
@@ -284,9 +270,6 @@ def main():
                         f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_yearlydh_{glacier_inventory}_{icesat_product}.png')
                 )
 
-                # todo plots at the end (if pltshow)
-                plotting.plotElevationPts(subset, glacier_name)
-
                 # hypsometric binning of glacier
                 try:
                     hypso = analysis.icesatHypso(
@@ -295,16 +278,8 @@ def main():
                     )
                 except:
                     icesat.fillWithNans(results, year, glacier_id, bins, glacier_name, glacier_outline.iloc[0]["geometry"])
-                    #print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "nodata")
+                    print(glacier_name, glacier_id, f'{n}/{gl_sum}', year, "!!!hypsofail")
                     continue
-
-                # append values and counts from hypso bins to results df
-                #values = hypso["value"].values
-                #counts = hypso["count"].values
-
-                #for i in range(0, len(bins)-1):
-                #    results["avg_dh"].loc[{"year": year, "glacier_id": glacier_id, "bin": bins[i+1]}] = values[i]
-                #    results["count"].loc[{"year": year, "glacier_id": glacier_id, "bin": bins[i+1]}] = counts[i]
 
                 bin_max = max(hypso["value"][4:])
                 results["bin_max"].loc[{"year": year, "glacier_id": glacier_id}] = bin_max
@@ -317,49 +292,98 @@ def main():
                 results["intercept"].loc[{"year": year, "glacier_id": glacier_id}] = intercept
                 results["geom"].loc[{"glacier_id": glacier_id}] = glacier_outline.iloc[0]["geometry"]
                 results["name"].loc[{"glacier_id": glacier_id}] = glacier_name
-                results["surging"].loc[{"year": year, "glacier_id": glacier_id}] = False
+                results["surging_rf"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
+                results["surging_threshold"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
+
+                # todo compute the yearly change (not accumulated change since 2010)
 
                 print(glacier_name, glacier_id, f'{n}/{gl_sum}', year)
 
-                # plot hypsometric curves and yearly dh for glacier
-                plotting.plotHypso(
-                    data=hypso,
-                    glacier_id=glacier_id,
-                    glacier_name=glacier_name,
-                    glacier_area=glacier_outline.geometry.area.iloc[0] / 1e6,
-                    output_path=Path(
-                        f'figures/{glacier_name}/{glacier_inventory}/{glacier_id}_hypso_{glacier_inventory}-{icesat_product}.png')
-                )
-
         # change surge values to True for known surges
-        results = analysis.fillKnownSurges(results)
+        #results = analysis.fillKnownSurges(results)
 
         # convert xarray dataset to pandas dataframe
-        df = results[["glacier_id", "name", "slope", "intercept", "max_dh", "bin_max", "surging", "geom"]].to_dataframe().reset_index()
+        df = results[["glacier_id", "dh_path", "name", "slope", "intercept", "max_dh", "bin_max", "surging_rf", "surging_threshold", "geom"]].to_dataframe().reset_index()
         df.to_csv('cache/df_results.csv')
 
     # load cached data
     df = pd.read_csv(resultspath)
 
     # create training dataset
-    training_dataset = analysis.createTrainingDataset(df)
+    #training_dataset = analysis.createTrainingDataset(df)
 
     # classify using random forest
-    analysis.classifyRF(df, training_dataset)
+    #rf_results = analysis.classifyRF(df, training_dataset)
+    #df['surging_rf'] = rf_results['surging_rf']
 
-    # do a threshold analysis
-    #analysis.thresholds(df)
+    # do threshold analysis
+    threshold_results = analysis.thresholdAnalysis(df)
+    df['surging_threshold'] = threshold_results['surging_threshold']
 
-    # todo convert pandas dataframe to shapefile
+    # save new df as csv
+    #df = df[
+    #    ["glacier_id", "dh_path", "name", "slope", "intercept", "max_dh", "bin_max", "surging_rf", "surging_threshold",
+    #     "geom"]].to_dataframe().reset_index()
+    df.to_csv('cache/df_results_surging.csv')
 
-    # visualize results
-    #plotting.plotSurges('none', results)
+    # PLOT RESULTS
+    for glacier_id in glacier_ids:
+        # select rows for current glacier id
+        glac_df = df.where(df['glacier_id'] == glacier_id).dropna(subset=['glacier_id'])
+
+        # create figure
+        from matplotlib import pyplot as plt
+        plt.close('all')
+        plt.subplots(2, 3)
+        plt.suptitle(glac_df.name.iloc[0])
+
+        # create subplots for each year
+        i = 1
+        for index, row in glac_df.iterrows():
+            ax = plt.subplot(2, 3, i)
+            try:
+                plt.title(f'{row.year}, {row.surging}')
+            except:
+                plt.title(f'{row.year.iloc[0]}, {max(row.surging.values)}')
+            # try if dataset for given year exists, otherwise skip and continue
+            try:
+                data = xr.open_dataset(row.dh_path)
+            except:
+                i = i + 1  # increment
+                continue
+
+            # plot the elevation pts
+            plt.scatter(data['h'], data['dh'], marker='.', s=2, c='orange')
+            plt.xlim(0,1200)
+            plt.ylim(-60,60)
+            ax.invert_xaxis()
+
+            i  = i + 1
+
+        plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # -------------------------------------------------------------
+    # VALIDATION OF RESULTS
+    # with arcticdem
+    # -------------------------------------------------------------
 
     for glacier_id in glacier_ids:
-        # -------------------------------------------------------------
-        # VALIDATION OF RESULTS
-        # with arcticdem
-        # -------------------------------------------------------------
         if validate:
             # todo validation in loop above
             # path to ArcticDEM directory

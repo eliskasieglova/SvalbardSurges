@@ -5,6 +5,13 @@ import variete
 import variete.vrt.vrt
 from matplotlib import pyplot as plt
 import warnings
+import socket
+import os
+
+# The PROJ installation points to the wrong directory for the proj.db file, which needs to be fixed on this computer
+if socket.gethostname() == "DESKTOP-09DFBN6":
+    os.environ[
+        "PROJ_DATA"] = "C:\\Users\\eliss\\anaconda3\\envs\\SvalbardSurges\\Lib\\site-packages\\pyproj\\proj_dir\\share\\proj"
 
 # Catch a deprecation warning that arises from skgstat when importing xdem
 with warnings.catch_warnings():

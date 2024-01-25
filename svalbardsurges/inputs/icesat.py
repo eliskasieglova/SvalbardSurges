@@ -30,7 +30,7 @@ def statistics(data_path = 'nordenskiold_land-is2.nc'):
     plt.figure(figsize=(10, 10))
     plt.style.use('seaborn-v0_8-darkgrid')
     plt.hist(data, bins=bins)
-    plt.show()
+    #plt.show()
 
     return st
 
@@ -65,6 +65,18 @@ def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path
 
     # load data
     data = xr.open_dataset(input_path, decode_coords=False)
+
+    # visualize data to see where the subset is and where the icesat data is
+    #plt.close('all')
+    plt.scatter(data['easting'], data['northing'], s=2)
+    #polygon = glacier_outline.iloc[0]['geometry']
+    #plt.plot(*polygon.exterior.xy, color='grey')
+    #plt.title(glacier_outline.iloc[0]['glac_name'])
+    #plt.show()
+
+    #plt.scatter(data.h, data.h, c='orange', s=2)
+    #plt.title(glacier_outline.iloc[0]['glac_name'])
+    plt.show()
 
     #if input_path == Path('nordenskiold_land-is2.nc'):
     #    for b in ['', '_20m_0', '_20m_1', '_20m_2', '_20m_3', '_20m_4']:
@@ -125,7 +137,8 @@ def fillWithNans(df, year, glacier_id, bins, name, geom):
     df["slope"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["intercept"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["bin_max"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
-    df["surging"].loc[{"year": year, "glacier_id": glacier_id}] = False
+    df["surging_rf"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
+    df["surging_threshold"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
 
     # bins
     #for i in range(0, len(bins) - 1):

@@ -6,9 +6,12 @@ from matplotlib import pyplot as plt
 from sklearn import linear_model
 from sklearn.cluster import KMeans, DBSCAN, SpectralClustering
 from sklearn.mixture import GaussianMixture
+import pandas as pd
 from scipy.optimize import curve_fit
+from shapely.geometry import Polygon
+import shapely
 
-from svalbardsurges.controllers import pltshow, pltsave, hypso, ransac, linearregression
+from svalbardsurges.controllers import pltshow, pltsave
 
 # Catch a deprecation warning that arises from skgstat when importing xDEM
 with warnings.catch_warnings():
@@ -64,8 +67,8 @@ def icesatDEMDifference(icesat_path, dem_path, output_path):
     """
 
     # cache
-    #if output_path.is_file():
-    #    return output_path
+    if output_path.is_file():
+        return output_path
 
     # open data
     data = xr.open_dataset(icesat_path)
@@ -81,14 +84,16 @@ def icesatDEMDifference(icesat_path, dem_path, output_path):
             count=data.easting.shape[0]
         )
 
+    plt.close('all')
+
     # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
-    if data['h_te_best_fit'].size > 0:
-        data["h"] = data["h_te_best_fit"]
+    # if ATL08
+    #data["h"] = data["h_te_best_fit"]
     data["dh"] = data["h"] - data["dem_elevation"] - 31.55  # todo a bit better correction
     data = data.drop_vars(['date_str'])
 
-    if data.dropna('index')['dh'].size == 0:
-        return 'nodata'
+    #if data.dropna('index')['dh'].size == 0:
+    #    return 'nodata'
 
     # save as netcdf file
     data.to_netcdf(output_path)
@@ -97,7 +102,6 @@ def icesatDEMDifference(icesat_path, dem_path, output_path):
 
 
 def create_bins(data_path):
-
     # open data
     data = xr.open_dataset(data_path)
 
@@ -599,6 +603,11 @@ def lsFun(x, a, b):
 
 def classifyRF(df, training_data):
     from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, ConfusionMatrixDisplay
+    from sklearn.model_selection import RandomizedSearchCV, train_test_split
+    from scipy.stats import randint
+    from sklearn.tree import export_graphviz
+    from IPython.display import Image
 
     plt.close('all')
     #plt.scatter(df['slope'], df['max_dh'], c=df['year'])
@@ -616,30 +625,55 @@ def classifyRF(df, training_data):
             df = df.drop(index=i)
 
     # Split the data into features (X) and target (y)
-    X = df.drop(columns=['surging', 'glacier_id', 'year', 'geom', 'name'])
-    y = df.surging.replace({True: 1, False: 0})
+    X = df.drop(columns=['surging_rf', 'surging_threshold', 'glacier_id', 'year', 'geom', 'name', 'dh_path', 'intercept', 'bin_max'])
+    y = df.surging_rf.replace({True: 1, False: 0})
 
     # split training dataset into features and target
-    X_train = training_data.drop(columns=['surging', 'glacier_id', 'year', 'geom', 'name'])
-    y_train = training_data.surging.replace({True: 1, False: 0})
+    X_train = training_data.drop(columns=['surging_rf', 'surging_threshold', 'glacier_id', 'year', 'geom', 'name', 'dh_path', 'intercept', 'bin_max'])
+    y_train = training_data.surging_rf.replace({True: 1, False: 0})
 
+    # fitting and evaluating the model
     rf = RandomForestClassifier()
     rf.fit(X_train, y_train)
-    print(rf.predict(X))
 
-    X['surging'] = rf.predict(X)
-    import pandas as pd
-    df = df.drop(columns=['surging'])
+    # evaluate the model by comparison with actual data
+    y_pred = rf.predict(X_train)
+    accuracy = accuracy_score(y_train, y_pred)
+    print(accuracy)
+
+    X['surging_rf'] = rf.predict(X)
+    df = df.drop(columns=['surging_rf'])
     result = pd.concat([df, X], axis=1, join='inner')
 
+    # merge results with training data for plotting
+    #result['training'] = 0
+    #training_data['training'] = 1
+    #result = pd.concat([result, training_data], axis=1, join='inner')
 
-    for index, row in result.iterrows():
-        polygon = row['geom']
-        plt.plot(*polygon.exterior.xy, color='grey')
+    for year in [2018, 2019, 2020, 2021, 2022, 2023]:
+        print(year)
+        for index, row in result.iterrows():
+            if row['year'] == year:
+                polygon = shapely.wkt.loads(row['geom'])
+                if row['surging_rf'] == 1:
+                    print(row['name'], 1)
+                    c = 'orange'
+                else:
+                    print(row['name'], 0)
+                    c = 'grey'
 
-    plt.show()
+                #if row['training'] == 1:
+                #    print(row['name'], 'training')
+                #    c = 'blue'
 
-    return
+                plt.title(year)
+                plt.plot(*polygon.exterior.xy, color=c)
+
+        #plt.show()
+    # only return surge/not surge
+    subset = result[['glacier_id', 'year', 'surging_rf']]
+
+    return subset
 
 
 def fillKnownSurges(data):
@@ -658,7 +692,7 @@ def fillKnownSurges(data):
 
     # open csv file with surges between 2017 and 2022
     import csv
-    with open('cache/surge_table.csv', newline="") as csvfile:
+    with open('data/surge_table.csv', newline="") as csvfile:
         file = csv.reader(csvfile, delimiter=",")
         n = 0
         for row in file:
@@ -705,14 +739,60 @@ def fillKnownSurges(data):
 
     return data
 
+
 def createTrainingDataset(data):
     # create dataset with only surging glaciers
-    surging_glaciers = data.where((data["surging"] == True) | (data['glacier_id'] == 'G018079E77679N') |
+    surging_glaciers = data.where((data["surging_rf"] == True) | (data['glacier_id'] == 'G018079E77679N') |
                                   (data['glacier_id'] == 'G017944E77626N') | (data['glacier_id'] == 'G017525E77773N' ))
-    surging_glaciers.dropna(subset=['surging'], inplace=True)
+    surging_glaciers.dropna(subset=['surging_rf'], inplace=True)
 
     # add data for glaciers that are not surging
 
-    # todo choose half of this dataset to create training data (the other half will go for validation)
-
     return surging_glaciers
+
+
+def thresholdAnalysis(df):
+
+    print(df)
+
+    thresholds = {
+        "max_dh": 25,
+        "slope": 0,
+        "bin_avg": 20
+    }
+
+    df_slope = df[['name', 'year', 'geom', 'glacier_id', 'slope', 'surging_threshold']].dropna()
+    df_slope.loc[df_slope['slope'] < 0, 'surging_threshold'] = 1
+    df_slope.loc[df_slope['slope'] > 0, 'surging_threshold'] = 0
+
+
+    for year in [2018, 2019, 2020, 2021, 2022, 2023]:
+        print(year)
+        for index, row in df_slope.iterrows():
+            if row['year'] == year:
+                polygon = shapely.wkt.loads(row['geom'])
+                if row['surging_threshold'] == 1:
+                    print(row['name'], 1)
+                    c = 'orange'
+                else:
+                    print(row['name'], 0)
+                    c = 'grey'
+
+                #if row['training'] == 1:
+                #    print(row['name'], 'training')
+                #    c = 'blue'
+
+                plt.title(year)
+                plt.plot(*polygon.exterior.xy, color=c)
+
+        plt.show()
+
+    return df_slope
+
+
+def uncertainty(dem, icesat, shp):
+
+    shp = gpd.read_file('../data/reference_rectangles.shp').to_crs(32633)
+
+
+

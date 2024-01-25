@@ -39,9 +39,9 @@ def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path):
         for year in list(data):
             # plot histogram
             ax1 = plt.subplot(2, 2, n)
-            ax1.barh(y = data[year].index.mid,
-                     width = data[year]['count'],
-                     height = data[year].index.right - data[year].index.left,
+            ax1.barh(y=data[year].index.mid,
+                     width=data[year]['count'],
+                     height=data[year].index.right - data[year].index.left,
                      edgecolor="black", zorder=0, alpha=0.1
                     )
             #ax1.set_xlim(0,3)
@@ -71,9 +71,12 @@ def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path):
     return
 
 
-def plotElevationPts(icesat_data, glacier_name):
-    # load data
-    data = icesat_data
+def plotElevationPts(icesat_data_path, glacier_name):
+    # load data if exists (possible that subset was not created because not enough pts or too small area of glacier)
+    try:
+        data = xr.open_dataset(icesat_data_path)
+    except:
+        return
 
     # initiate plot
     fig, axs = plt.subplots(2, 2)
@@ -135,6 +138,8 @@ def plotYearlyDH(icesat_data, glacier_outline, glacier_name, glacier_id, output_
     Saves figure of plotted yearly elevation differences.
     """
 
+    plt.close()
+
     if pltshow | pltsave:
         data = icesat_data
 
@@ -178,7 +183,7 @@ def plotYearlyDH(icesat_data, glacier_outline, glacier_name, glacier_id, output_
 
         fig.subplots_adjust(right=0.8)
         cbar_ax = fig.add_axes([0.86, 0.15, 0.05, 0.7])
-        fig.colorbar(im, cax=cbar_ax)
+        #fig.colorbar(im, cax=cbar_ax)
 
     # if pltshow -> show plot, if pltsave -> save as figure
     if pltshow:
@@ -396,4 +401,26 @@ def plotSurges(svalbard_shp, results):
     plt.title(f'surging glaciers')
 
     plt.show()
+    return
+
+def plotYears(glacier_ids, shp_path, icesat_path):
+
+    data = xr.open_dataset(icesat_path)
+    plt.scatter(data.easting, data.northing, c=data.dem_elevation)
+
+    import geopandas as gpd
+    shp = gpd.read_file(shp_path).to_crs(32633)
+    for index, row in shp.iterrows():
+        polygon = row["geometry"]
+        if "Multi" not in polygon.geom_type:
+            polygons = [polygon]
+        else:
+            polygons = polygon.geoms
+        for polygon in polygons:
+            plt.plot(*polygon.exterior.xy, color='black')
+
+    plt.xlim(390000, 450000)
+    plt.ylim(8400000, 8900000)
+    plt.axis('equal')
+    #plt.show()
     return

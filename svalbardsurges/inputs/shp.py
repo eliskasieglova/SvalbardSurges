@@ -10,30 +10,6 @@ if socket.gethostname() == "DESKTOP-09DFBN6":
 from pyproj import Proj
 
 
-def getIDs(filepath, id_attr):
-    """
-    Loops through entries in shp and extracts glacier IDs to a list.
-
-    Params
-    ------
-    - filepath
-        path to rgi or gao
-
-    Returns
-    -------
-    list of glacier ids
-    """
-
-    # load shapefile
-    shp = gpd.read_file(filepath).to_crs(32633)
-
-    glacier_ids = []
-    for i in shp[id_attr]:
-        glacier_ids.append(i)
-
-    return glacier_ids
-
-
 def load_shp(file_path, id_attribute, glacier_id):
     """
     Loads a single glacier as shapefile from the GAO dataset.
@@ -56,9 +32,6 @@ def load_shp(file_path, id_attribute, glacier_id):
         # todo handle when shapefile is empty (cannot read)
         glacier_outline = gpd.read_file(output_file).to_crs(32633)
         return glacier_outline
-
-
-    # if glacier outline is not cached, load it and save it
 
     # load glacier area outlines converted to EPSG:32633
     shp = gpd.read_file(file_path).to_crs(32633)
@@ -83,8 +56,9 @@ def withinBBox(bbox, filepath, id_attr, output_file):
         shp = gpd.read_file(output_file).to_crs(32633)
 
         glacier_ids = []
-        for i in shp[id_attr]:
-            glacier_ids.append(i)
+        for index, row in shp.iterrows():
+            if (row['geometry'].area / 1e6 > 15) & (row['glac_name'] != "None"):
+                glacier_ids.append(row['glims_id'])
 
         return glacier_ids
 
@@ -102,8 +76,9 @@ def withinBBox(bbox, filepath, id_attr, output_file):
         subset = shp.cx[eastings[0]:eastings[1], northings[0]:northings[1]]
 
         glacier_ids = []
-        for i in subset[id_attr]:
-            glacier_ids.append(i)
+        for index, row in shp.iterrows():
+            if (row['geometry'].area / 1e6 > 15) & (row['glac_name'] != "None"):
+                glacier_ids.append(row['glims_id'])
 
         # cache subset
         subset.to_file(filename=output_file)
