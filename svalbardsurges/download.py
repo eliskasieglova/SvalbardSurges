@@ -3,7 +3,7 @@ import shutil
 import os
 from pathlib import Path
 import requests
-import icepyx as ipx
+#import icepyx as ipx
 from matplotlib import pyplot as plt
 
 

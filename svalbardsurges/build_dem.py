@@ -72,7 +72,8 @@ def get_bounds(
     region_bounds = {
         "svalbard": {"left": 375211, "bottom": 8486823, "right": 763281, "top": 9008372},
         "nordenskiold": {"left": 443002.5, "bottom": 8626007.5, "right": 560242.5, "top": 8703007.5},
-        "heerland": {"left": 537010, "bottom": 8602780, "right": 582940, "top": 8656400}
+        "heerland": {"left": 537010, "bottom": 8602780, "right": 582940, "top": 8656400},
+        "northwest": {"left": 375211, "bottom": 8626007.5, "right": 527781, "top": 8882048}
     }
 
     bounds = region_bounds[region]

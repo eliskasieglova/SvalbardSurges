@@ -60,15 +60,14 @@ def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path
 
     # if subset already exists return path
     if output_path.is_file():
-        subset = xr.open_dataset(output_path)
-        return subset
+        return output_path
 
     # load data
     data = xr.open_dataset(input_path, decode_coords=False)
 
     # visualize data to see where the subset is and where the icesat data is
     #plt.close('all')
-    plt.scatter(data['easting'], data['northing'], s=2)
+    #plt.scatter(data['easting'], data['northing'], s=2)
     #polygon = glacier_outline.iloc[0]['geometry']
     #plt.plot(*polygon.exterior.xy, color='grey')
     #plt.title(glacier_outline.iloc[0]['glac_name'])
@@ -76,7 +75,7 @@ def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path
 
     #plt.scatter(data.h, data.h, c='orange', s=2)
     #plt.title(glacier_outline.iloc[0]['glac_name'])
-    plt.show()
+    #plt.show()
 
     #if input_path == Path('nordenskiold_land-is2.nc'):
     #    for b in ['', '_20m_0', '_20m_1', '_20m_2', '_20m_3', '_20m_4']:
@@ -102,8 +101,8 @@ def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path
 
     # if subset is empty all the analysis, plotting and validation will be set to False in main.py
     # todo better way of filtering
-    if subset.index.size < 20:
-        return 'empty'
+    #if subset.index.size < 20:
+    #    return 'empty'
 
     # clip data to glacier outline (shapefile)
     points = gpd.points_from_xy(x=subset.easting, y=subset.northing)  # create geometry from ICESat-2 points
@@ -120,13 +119,12 @@ def icesatSpatialSubset(input_path, spatial_extent, glacier_outline, output_path
     except:
         subset = subset
 
-
     subset.to_netcdf(output_path)
 
-    return subset
+    return output_path
 
 
-def fillWithNans(df, year, glacier_id, bins, name, geom):
+def fillWithNans(df, year, glacier_id, bins, name, geom, errormessage):
 
     # name and geometry
     df["name"].loc[{"glacier_id": glacier_id}] = name
@@ -135,10 +133,12 @@ def fillWithNans(df, year, glacier_id, bins, name, geom):
     # nan values
     df["max_dh"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["slope"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
+    df["slope_binned"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["intercept"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["bin_max"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["surging_rf"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
     df["surging_threshold"].loc[{"year": year, "glacier_id": glacier_id}] = np.nan
+    df["errormessage"].loc[{"year": year, "glacier_id": glacier_id}] = errormessage
 
     # bins
     #for i in range(0, len(bins) - 1):
@@ -149,9 +149,8 @@ def fillWithNans(df, year, glacier_id, bins, name, geom):
 
 
 
-def yearsInData(input_path):
+def yearsInData(input_path, output_path):
     # cache
-    output_path = Path(f'data/icesat.nc')
     if output_path.is_file():
         data = xr.open_dataset(output_path)
         # how many years
@@ -173,8 +172,6 @@ def yearsInData(input_path):
     data.to_netcdf(output_path)
 
     return output_path, years
-
-    return output_path
 
 
 def groupby_hydroyear(data, year):

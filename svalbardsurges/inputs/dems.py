@@ -57,7 +57,7 @@ def load_dem(input_path, spatial_extent, label):
 
     return vrt_cropped_filepath
 
-def mask_dem(dem_path, glacier_outline, label) -> Path:
+def mask_dem(dem_path, crop_feature, label) -> Path:
     """
     Masks DEM data by the glacier area outlines.
 
@@ -73,24 +73,19 @@ def mask_dem(dem_path, glacier_outline, label) -> Path:
     Masked DEM containing values only within the glacier area outlines.
     """
 
-    path = Path(f'cache/{label}_masked.tif')
+    path = Path(f'cache/{label}.tif')
     if path.is_file():
         return path
 
     # create DEM from .vrt
-    dem = xdem.DEM(str(dem_path), load_data=False)
+    dem = xdem.DEM('data/npi_vrts/npi_mosaic.vrt', load_data=False)
 
     # rasterize the shapefile to fit the DEM
-    gao_rasterized = gu.Vector(glacier_outline).create_mask(dem)
+    rasterized = gu.Vector(crop_feature).create_mask(dem)
 
     # extract values inside the glacier area outlines
     dem.load()
-    dem.set_mask(~gao_rasterized)
-
-    if pltshow:
-        dem.show()
-        plt.title(f'{label} masked DEM')
-        plt.show()
+    dem.set_mask(~rasterized)
 
     # cache DEM
     dem.save(str(path))

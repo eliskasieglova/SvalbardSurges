@@ -4,19 +4,7 @@ testdata = False  # run on test data?
 pltshow = False  # show plots?
 pltsave = False  # save plots?
 
-rerun = False # rerun the downloads and analysis
-
-
-# which data to use
-gao_url = 'https://daacdata.apps.nsidc.org/pub/DATASETS/nsidc0770_rgi_v7/regional_files/' \
-                      'RGI2000-v7.0-G/RGI2000-v7.0-G-07_svalbard_jan_mayen.zip'
-gao_ids = [
-            # 12412,      # Storbreen
-            13406.1,  # Scheelebreen
-            13218.1,  # Doktorbreen
-            # 17310.1,    # Hinlopenbreen
-            # 15511.1     # Kongsbreen
-        ]
+rerun = True  # rerun the downloads and analysis
 
 test_ids = [
     "G018031E77579N",  # Kvalbreen

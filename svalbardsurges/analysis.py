@@ -23,7 +23,7 @@ from svalbardsurges.inputs import icesat
 from pathlib import Path
 
 
-def groupByHydroYear(input_path, year):
+def groupByHydroYear(input_path, year, output_path):
     """
 
     :param input_path:
@@ -31,7 +31,6 @@ def groupByHydroYear(input_path, year):
     """
 
     # cache
-    output_path = Path(f'cache/{input_path.stem}{year}.nc')
     if output_path.is_file():
         return output_path
 
@@ -86,12 +85,10 @@ def icesatDEMDifference(icesat_path, dem_path, output_path):
 
     plt.close('all')
 
-    # subtract ICESat-2 elevation from DEM elevation (with elevation correction) todo for each beam
-    # if ATL08
-    #data["h"] = data["h_te_best_fit"]
+    # subtract ICESat-2 elevation from DEM elevation (with elevation correction)
     data["dh"] = data["h"] - data["dem_elevation"] - 31.55  # todo a bit better correction
-    data = data.drop_vars(['date_str'])
 
+    data = data.dropna('index')
     #if data.dropna('index')['dh'].size == 0:
     #    return 'nodata'
 
@@ -145,11 +142,7 @@ def icesatHypso(icesat_data, bins):
     return hypso
 
 
-def linRegHypso(hypso):
-    # prepare data
-    x = hypso.index.mid
-    y = hypso.value
-
+def linRegHypso(x, y):
     # remove Nans from list
     x, y = removeNans(x, y)
 
@@ -228,22 +221,28 @@ def plotHypso(hypso, glacier_name):
 
 
 def removeNans(x, y):
-    x = x.tolist()
-    y = y.tolist()
+    try:
+        x = x.tolist()
+    except:
+        x = x.values.tolist()
+    try:
+        y = y.tolist()
+    except:
+        y = y.values.tolist()
     a = x
     b = y
     # todo describe function
     # go through elements of list
     unwanted = []
-    for i in range(len(y)):
+    for i in range(len(b)):
         # if value is nan, then remove the value from the list (don't plot, doesn't go in the analysis)
-        if not y[i] < 10000:  # todo IMPROVE (this is a very quick and ugly fix for getting rid of nans)
+        if not b[i] < 10000:  # todo IMPROVE (this is a very quick and ugly fix for getting rid of nans)
             unwanted.append(i)
 
     # delete the unwanted nans (based on index)
     for i in sorted(unwanted, reverse=True):
-        del x[i]
-        del y[i]
+        del a[i]
+        del b[i]
 
     # convert back to arrays
     x = np.array(a)
@@ -378,7 +377,7 @@ def linRegAlg(data, glacier_name):
 def linreg(data):
 
     if data.index.size == 0:
-        return np.nan
+        return np.nan, np.nan
 
     # reshape arrays
     X = data.h.values.reshape(-1, 1)
@@ -754,28 +753,48 @@ def createTrainingDataset(data):
 def thresholdAnalysis(df):
 
     print(df)
+    df['surging_threshold'] = -1
 
     thresholds = {
         "max_dh": 25,
         "slope": 0,
+        "slope_binned": 0,
+        "slope_lower": 0,
         "bin_avg": 20
     }
 
-    df_slope = df[['name', 'year', 'geom', 'glacier_id', 'slope', 'surging_threshold']].dropna()
+    df_slope = df[['name', 'year', 'geom', 'glacier_id', 'slope', 'slope_binned', 'slope_lower', 'surging_threshold']].dropna()
     df_slope.loc[df_slope['slope'] < 0, 'surging_threshold'] = 1
     df_slope.loc[df_slope['slope'] > 0, 'surging_threshold'] = 0
+
+    for index, row in df.iterrows():
+
+        if (row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0) | (row['max_dh'] > 15):
+            if ((row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0)) & (row['max_dh'] > 15):
+                df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 2
+            else:
+                df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 1
+        else:
+            df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 0
+
 
 
     for year in [2018, 2019, 2020, 2021, 2022, 2023]:
         print(year)
-        for index, row in df_slope.iterrows():
+        for index, row in df.iterrows():
             if row['year'] == year:
                 polygon = shapely.wkt.loads(row['geom'])
                 if row['surging_threshold'] == 1:
                     print(row['name'], 1)
+                    c = 'red'
+                elif row['surging_threshold'] == 2:
+                    print(row['name'], 1)
                     c = 'orange'
+                elif row['surging_threshold'] == 0:
+                    print(row['name'], 1)
+                    c = 'blue'
                 else:
-                    print(row['name'], 0)
+                    print(row['name'], -1)
                     c = 'grey'
 
                 #if row['training'] == 1:
