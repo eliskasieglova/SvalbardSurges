@@ -4,7 +4,7 @@ testdata = False  # run on test data?
 pltshow = False  # show plots?
 pltsave = False  # save plots?
 
-rerun = True  # rerun the downloads and analysis
+rerun = False  # rerun the downloads and analysis
 
 test_ids = [
     "G018031E77579N",  # Kvalbreen

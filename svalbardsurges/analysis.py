@@ -596,11 +596,7 @@ def lsFun(x, a, b):
     return y
 
 
-# todo spectral clustering BIRCH, others?
-# https://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_comparison.html#sphx-glr-auto-examples-cluster-plot-cluster-comparison-py
-
-
-def classifyRF(df, training_data):
+def classifyRF(df, training_data_path):
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, ConfusionMatrixDisplay
     from sklearn.model_selection import RandomizedSearchCV, train_test_split
@@ -608,15 +604,15 @@ def classifyRF(df, training_data):
     from sklearn.tree import export_graphviz
     from IPython.display import Image
 
-    plt.close('all')
-    #plt.scatter(df['slope'], df['max_dh'], c=df['year'])
-    #plt.show()
+    # open training dataset
+    training_data_path = 'data/trainingdataerik2.csv'
+    training_data = pd.read_csv(training_data_path)
 
     # remove nans from datasets
     df = df.dropna(axis='index')
     training_data = training_data.dropna(axis='index')
 
-    # remove glaciers in training dataset from dataset
+    # remove glaciers in training dataset from dataset for classification
     for i in df.index.values:
         # get glacier id of
         glac_id = df._get_value(i, 'glacier_id')
@@ -624,12 +620,12 @@ def classifyRF(df, training_data):
             df = df.drop(index=i)
 
     # Split the data into features (X) and target (y)
-    X = df.drop(columns=['surging_rf', 'surging_threshold', 'glacier_id', 'year', 'geom', 'name', 'dh_path', 'intercept', 'bin_max'])
-    y = df.surging_rf.replace({True: 1, False: 0})
+    X = df.drop(columns=['Unnamed: 0', 'surging_rf', 'surging_threshold', 'glacier_id', 'year', 'geom', 'name', 'dh_path', 'intercept', 'bin_max'])
+    #y = df.surging_rf.replace({True: 1, False: 0})
 
     # split training dataset into features and target
-    X_train = training_data.drop(columns=['surging_rf', 'surging_threshold', 'glacier_id', 'year', 'geom', 'name', 'dh_path', 'intercept', 'bin_max'])
-    y_train = training_data.surging_rf.replace({True: 1, False: 0})
+    X_train = training_data.drop(columns=['Unnamed: 0.1', 'Unnamed: 0', 'glacier_id', 'year', 'name', 'max_binned', 'surging'])
+    y_train = training_data.surging
 
     # fitting and evaluating the model
     rf = RandomForestClassifier()
@@ -644,31 +640,6 @@ def classifyRF(df, training_data):
     df = df.drop(columns=['surging_rf'])
     result = pd.concat([df, X], axis=1, join='inner')
 
-    # merge results with training data for plotting
-    #result['training'] = 0
-    #training_data['training'] = 1
-    #result = pd.concat([result, training_data], axis=1, join='inner')
-
-    for year in [2018, 2019, 2020, 2021, 2022, 2023]:
-        print(year)
-        for index, row in result.iterrows():
-            if row['year'] == year:
-                polygon = shapely.wkt.loads(row['geom'])
-                if row['surging_rf'] == 1:
-                    print(row['name'], 1)
-                    c = 'orange'
-                else:
-                    print(row['name'], 0)
-                    c = 'grey'
-
-                #if row['training'] == 1:
-                #    print(row['name'], 'training')
-                #    c = 'blue'
-
-                plt.title(year)
-                plt.plot(*polygon.exterior.xy, color=c)
-
-        #plt.show()
     # only return surge/not surge
     subset = result[['glacier_id', 'year', 'surging_rf']]
 
@@ -739,15 +710,48 @@ def fillKnownSurges(data):
     return data
 
 
-def createTrainingDataset(data):
-    # create dataset with only surging glaciers
-    surging_glaciers = data.where((data["surging_rf"] == True) | (data['glacier_id'] == 'G018079E77679N') |
-                                  (data['glacier_id'] == 'G017944E77626N') | (data['glacier_id'] == 'G017525E77773N' ))
-    surging_glaciers.dropna(subset=['surging_rf'], inplace=True)
+def createTrainingDataset(data, input_path, output_path):
+    """
+    Fills training dataset with values determining slope of change, max dh etc.
 
-    # add data for glaciers that are not surging
+    Params
+    ------
+    - data
+        xarray dataset with computed values for each glacier
+    - training_data_path
+        path to training dataset (csv containing name, glacier id, year, surging/not surging but no values for slope and max dh)
 
-    return surging_glaciers
+    Returns:
+    Pandas dataframe with filled in values for training glaciers.
+    """
+    # cache
+    if output_path.is_file():
+        return output_path
+
+    # load training data as dataframe
+    training_data = pd.read_csv(input_path)
+
+    # fill values
+    for index, row in training_data.iterrows():
+        # select subset from data by glacier id and year
+        subset = data.loc[(data['glacier_id'] == row['glacier_id']) & (data['year'] == row['year'])]
+
+        # if subset is empty dont continue
+        if subset.size == 0:
+            continue
+
+        # append values to training data
+        training_data.loc[training_data['glacier_id'] == row['glacier_id'], 'slope'] = float(subset.slope.values)
+        training_data.loc[training_data['glacier_id'] == row['glacier_id'], 'slope_lower'] = float(subset.slope_lower.values)
+        training_data.loc[training_data['glacier_id'] == row['glacier_id'], 'slope_binned'] = float(subset.slope_binned.values)
+        training_data.loc[training_data['glacier_id'] == row['glacier_id'], 'max_dh'] = float(subset.max_dh.values)
+        training_data.loc[training_data['glacier_id'] == row['glacier_id'], 'max_binned'] = float(subset.bin_max.values)
+
+    print(training_data)
+    training_data = training_data.dropna()
+    training_data.to_csv(output_path)
+
+    return
 
 
 def thresholdAnalysis(df):
@@ -767,17 +771,19 @@ def thresholdAnalysis(df):
     df_slope.loc[df_slope['slope'] < 0, 'surging_threshold'] = 1
     df_slope.loc[df_slope['slope'] > 0, 'surging_threshold'] = 0
 
+    df['id'] = df.apply(lambda row: f"{row['glacier_id']}{row['year']}", axis=1)
+
     for index, row in df.iterrows():
-
-        if (row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0) | (row['max_dh'] > 15):
-            if ((row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0)) & (row['max_dh'] > 15):
-                df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 2
-            else:
-                df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 1
+        if not row['slope'] > -9999:  # if nan
+            df.loc[df['id'] == row['id'], 'surging_threshold'] = -1
         else:
-            df.loc[df['dh_path'] == row['dh_path'], 'surging_threshold'] = 0
-
-
+            if (row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0) | (row['max_dh'] > 15):
+                if ((row['slope'] < 0) | (row['slope_binned'] < 0) | (row['slope_lower'] < 0)) & (row['max_dh'] > 15):
+                    df.loc[df['id'] == row['id'], 'surging_threshold'] = 2
+                else:
+                    df.loc[df['id'] == row['id'], 'surging_threshold'] = 1
+            else:
+                df.loc[df['id'] == row['id'], 'surging_threshold'] = 0
 
     for year in [2018, 2019, 2020, 2021, 2022, 2023]:
         print(year)
@@ -807,11 +813,4 @@ def thresholdAnalysis(df):
         plt.show()
 
     return df_slope
-
-
-def uncertainty(dem, icesat, shp):
-
-    shp = gpd.read_file('../data/reference_rectangles.shp').to_crs(32633)
-
-
 

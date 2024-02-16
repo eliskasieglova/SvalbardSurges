@@ -29,7 +29,7 @@ def main():
     # ---------------------------------------
 
     # ICESat-2 download specifications
-    icesat_product = 'ATL08'  # ATL06 or ATL08
+    icesat_product = 'ATL06'  # ATL06 or ATL08
     date_range = ['2018-10-14', '2023-11-10']
     icesat_filepath = Path(f'data/icesat_{icesat_product}.nc')
     area = "svalbard"
@@ -276,16 +276,17 @@ def main():
                 subset = subset.dropna('index')
 
                 icesat_dh_path = icesat_subset_path
-                #plt.subplots(1, 2)
-                #plt.title(f'{glacier_name}')
-                #plt.subplot(1, 2, 1)
-                #plt.scatter(subset.easting, subset.northing, c=subset.dh)
-                #import shapely
-                #polygon = shapely.wkt.loads(str(glacier_outline.iloc[0]["geometry"]))
-                #plt.plot(*polygon.exterior.xy)
-                #plt.subplot(1, 2, 2)
-                #plt.scatter(subset.h, subset.dh, s=2, marker='.', c='orange')
-                #plt.gca().invert_xaxis()
+                plt.subplots(1, 2)
+                plt.title(f'{glacier_name}')
+                plt.subplot(1, 2, 1)
+                plt.scatter(subset.easting, subset.northing, c=subset.dh)
+                import shapely
+                polygon = shapely.wkt.loads(str(glacier_outline.iloc[0]["geometry"]))
+                plt.plot(*polygon.exterior.xy)
+                plt.subplot(1, 2, 2)
+                plt.scatter(subset.h, subset.dh, s=2, marker='.', c='orange')
+                plt.gca().invert_xaxis()
+                plt.show()
 
                 # append path to subset (for future plotting)
                 results["dh_path"].loc[{"year": year, "glacier_id": glacier_id}] = str(icesat_dh_path)
@@ -384,55 +385,52 @@ def main():
     resultspath = f'cache/results{area}{icesat_product}{glacier_inventory}.csv'
     df = pd.read_csv(resultspath)
 
-    from matplotlib import pyplot as plt
-    n=0
-    for year in [2018, 2019, 2020, 2021, 2022, 2023]:
-        df1 = df.where(df.year == year)
-        for index, row in df1.iterrows():
-            if (type(row['dh_path']) != str) | (row['dh_path'] == '0'):
-                continue
-            data = xr.open_dataset(row.dh_path)
-            plt.scatter(data.h, data.dh, s=2, marker='.', c='orange')
-            plt.title(f'{row["name"]}, {row["slope"]}')
-            print(row['name'], row.slope)
-            #plt.show()
-
-    # create training dataset
-    #training_dataset = analysis.createTrainingDataset(df)
-
-    # classify using random forest
-    #rf_results = analysis.classifyRF(df, training_dataset)
-    #df['surging_rf'] = rf_results['surging_rf']
-
     # do threshold analysis
-    threshold_results = analysis.thresholdAnalysis(df)
-    df['surging_threshold'] = threshold_results['surging_threshold']
+    if False:
+        threshold_results = analysis.thresholdAnalysis(df)
+        df['surging_threshold'] = threshold_results['surging_threshold']
 
-    # save new df as csv
-    #df = df[
-    #    ["glacier_id", "dh_path", "name", "slope", "intercept", "max_dh", "bin_max", "surging_rf", "surging_threshold",
-    #     "geom"]].to_dataframe().reset_index()
-    df.to_csv('cache/df_results_surging.csv')
+    # Classify using Random Forest
+    rf_resultspath = Path('data/df_results_surging.csv')
+    if True:
+        # create training dataset
+        inputtrainingdatapath = Path('data/trainingdataerik.csv')
+        trainingdatapath = analysis.createTrainingDataset(df, inputtrainingdatapath, Path('data/trainingdataerik2.csv'))
+
+        # Random Forest Classification
+        rf_results = analysis.classifyRF(df, trainingdatapath)
+        df['surging_rf'] = rf_results['surging_rf']
+
+        # save results as csv
+        df.to_csv(rf_resultspath)
+
+    df = pd.read_csv(rf_resultspath)
+
+    for index, row in df.iterrows():
+        if row['surging_rf'] == 1:
+            print(row['name'], row['year'], row['slope'], row['max_dh'])
+
+    plotting.mapSurgesRF(df)
 
     # PLOT RESULTS
     for glacier_id in glacier_ids:
         # select rows for current glacier id
-        glac_df = df.where(df['glacier_id'] == glacier_id).dropna(subset=['glacier_id'])
+        glacier = df.where(df['glacier_id'] == glacier_id).dropna(subset=['glacier_id'])
 
         # create figure
         from matplotlib import pyplot as plt
         plt.close('all')
         plt.subplots(2, 3)
-        plt.suptitle(glac_df.name.iloc[0])
+        plt.suptitle(glacier.name.iloc[0])
 
         # create subplots for each year
         i = 1
-        for index, row in glac_df.iterrows():
+        for index, row in glacier.iterrows():
             ax = plt.subplot(2, 3, i)
             try:
-                plt.title(f'{row.year}, {row.surging}')
+                plt.title(f'{row.year}, {row.surging_rf}')
             except:
-                plt.title(f'{row.year.iloc[0]}, {max(row.surging.values)}')
+                plt.title(f'{row.year.iloc[0]}, {max(row.surging_rf.values)}')
             # try if dataset for given year exists, otherwise skip and continue
             try:
                 data = xr.open_dataset(row.dh_path)
@@ -449,10 +447,6 @@ def main():
             i  = i + 1
 
         plt.show()
-
-
-
-
 
 
 

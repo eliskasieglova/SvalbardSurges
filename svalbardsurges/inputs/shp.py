@@ -19,7 +19,7 @@ def load_shp(file_path, attr_name, attr_value):
     - file_path
         path to shapefile
     - attr_name
-        column name of selected attribute
+        column name of selected attribute (string)
     - attr_value
         what value we want to select
 

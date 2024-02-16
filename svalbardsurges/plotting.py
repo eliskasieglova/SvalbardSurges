@@ -9,6 +9,8 @@ with warnings.catch_warnings():
 
 from svalbardsurges.controllers import pltshow as pltshow, pltsave as pltsave
 import numpy as np
+import shapely
+
 
 def plotHypso(data, glacier_id, glacier_name, glacier_area, output_path):
     """
@@ -423,4 +425,44 @@ def plotYears(glacier_ids, shp_path, icesat_path):
     plt.ylim(8400000, 8900000)
     plt.axis('equal')
     #plt.show()
+    return
+
+
+def mapSurgesRF(data):
+    """
+    Plot a map of glaciers in Svalbard colored by surge/not surge.
+
+    Params:
+    ------
+    - data
+        Pandas dataframe of results containing attributes name, glacier ID, surging_rf (random forest), surging_threshold
+    - classification
+        Which classification to plot. randomforest/threshold
+
+    Returns:
+    Plot of Svalbard glaciers colored by surge/not surge.
+    """
+    colors = ['red', 'black', 'grey']
+
+    for year in [2018, 2019, 2020, 2021, 2022, 2023]:
+        print(year)
+        for index, row in data.iterrows():
+            if row['year'] == year:
+                polygon = shapely.wkt.loads(row['geom'])
+                if row['surging_rf'] == 1:
+                    c = colors[0]
+                elif row['surging_rf'] == 0:
+                    c = colors[1]
+                else:
+                    c = colors[2]
+
+                #if row['training'] == 1:
+                #    print(row['name'], 'training')
+                #    c = 'blue'
+
+                plt.title(year)
+                plt.plot(*polygon.exterior.xy, color=c)
+
+        plt.show()
+
     return
