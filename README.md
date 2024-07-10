@@ -34,6 +34,9 @@ date_range = ['start_date', 'end_date']  # list of start date and end date in fo
 
 These variables define the amount and type of data that will be downloaded and used for the classification of surges in Svalbard.
 
+## Notes
+Download using icepyx often crashes due to timeout of request. The solution is to either keep trying until the download is successful, or make the amount of data for download smaller, for example download each year separately.
+
 ## Detailed project description
 
 
