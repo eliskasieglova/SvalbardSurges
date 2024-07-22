@@ -43,10 +43,10 @@ These variables define the amount and type of data that will be downloaded and u
 - glacier_names.py: dictionary of glacier names to be retrieved based on glacier ID
 - user_vars.py: user variables to be defined by user
 
-### Setting up user defined variables
+### 1. Setting up user defined variables
 
 
-### Creating directory structure*
+### 2. Creating directory structure
 In the main file, first, directories needed for this project are created.
 ```
 # create the necessary directories
@@ -55,27 +55,40 @@ management.createDirs()
 
 ![image](https://github.com/user-attachments/assets/acce4c53-b5a6-49db-9822-5627e0f47cb5)
 
-### Downloading data
+### 3. Downloading Data
 Then, the function for downloading the ICESat-2 data is called. The download is done using the icepyx package and unfortunately the download using icepyx often crashes due to timeout of request. The solution is to either keep trying until the download is successful, or make the amount of data for download smaller - for example download each year separately. This function downloads the data based on the input settings - _label_, _products_ and _date_range_. The data we downloaded was for the whole Svalbard (label = 'svalbard'), the data products ATL06 and ATL08 (even though ATL06 is most likely enough) and date range from 1.11.2018 to 31.10.2023 (5 hydrological years). 
 
-### Reading data
+### 4. Reading data
 The ICESat-2 data is downloaded as .hdf5 files so we need to convert that to something we can work with in Python (pandas dataframe). For that the function read_icesat() is called which loops through the .hdf5 files, saves chosen variables to a dictionary which is then converted to a pandas dataframe. This function was taken and modified from Désirée Treichler. The variables we extracted are: latitude, longitude, height, acquisition time, quality flag (ATL06), but it is possible to look into the data product dictionaries of ATL06 and ATL08 and add variables (by modifying code in the file read_icesat.py). The read data is saved as data/ICESat.csv.
 
-### Computing elevation change
+### 5. Computing elevation change
 Elevation change is computed between each of the ICESat-2 heights and elevation on the reference DEM, which is in this case a mosaic of DEMs from the Norwegian Polar Institute (NPI). The NPI DEMs are warped and saved as a vrt using the build_dem.py script that is taken from Erik Schytt Mannerfelt. It is necessary to have the DEMs downloaded and saved in 'cache/'. Elevation change has to be corrected by ~30m which is the difference between ICESat-2 heights (above WGS-84 ellipsoid) and the NPI DEM (above geoid) in Svalbard. 
 
-### Select Glaciers
+### 6. Select Glaciers
 Glaciers within the area of interest (variable 'label') are selected from the Randolph Glacier Inventory (RGI). A geopackage with the clipped RGI is saved in the 'data/' folder. A list of glaciers is stored in a variable, which will then be looped through in the next steps.
 
-### Create glacier subsets
+### 7. Create glacier subsets
 Clips the ICESat-2 data and saves a new geopackage for each glacier.
 
-### Filtering and Normalizing
+### 8. Filtering and Normalizing
 Filters the ICESat-2 data from noise (mainly caused by clouds). The filtering is done using the RANSAC algorithm on 2D data where the x-dimension is ICESat-2 height and the y-dimension is elevation from the NPI DEM. This enables us to remove clouds while keeping the points for surges.
 
 The elevation data is normalized (not the elevation change) to 0-1 for each glacier so that the classification result is not affected by some glaciers being higher asl than others.
 
-### 
+### 9. Grouping by Hydrological Years
+The last step before the classification is to split the year data by hydrological years. A hydrological year begins on 1.11. and ends on 31.10. The files are stored in 'temp/glaciers/' with a naming convention 'glacierID_year.gpkg' where year 2019 means the hydrological year beginning on 1.11.2018 and ending 31.10.2019.
+
+### 10. Extract Features and Count Yearly Changes
+Features to describe elevation change trends over the glacier were extracted. Most of them are visualized on the plots below. These features served as input to the Random Forest Classification. Subsequently, the yearly changes were computed on all the features. 
+
+### 11. Random Forest Classification
+A Random Forest Classification is computed based on training data from Kääb et al. (2023). The training data can be downloaded in this Github project and should be saved in the 'data' folder. 
+
+
+
+
+### 12. Plot Results
+
 
 ## Notes
 
