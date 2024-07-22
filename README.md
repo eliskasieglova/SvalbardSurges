@@ -1,7 +1,5 @@
 # SvalbardSurges
 
-An innovative methodology on glacier surge detection with ICESat-2 data in Svalbard. This project was created as part of my diploma thesis at the Charles University in Prague in collaboration with the University in Oslo.
-
 Glacier surges are characterized by rapid accelerations in glacier flow followed by periods of quiescence and are significant in understanding glacier dynamics and their broader environmental implications. While stable glaciers are gaining mass in the accumulation zone and losing mass in the ablation zone (Hornbreen), surging glaciers show large positive elevation changes near the terminus and mass loss in the upper parts of the glacier (Monacobreen). This difference in elevation changes is the main presumption that detecting surges using elevation changes from ICESat-2 should work. This project preprocesses ICESat-2 data uses a reference DEM for measuring elevation changes and employs a random forest algorithm, along with innovative filtering techniques, to identify surging activity.
 
 ![image](https://github.com/user-attachments/assets/30a6b33d-6cda-4ecf-98b1-d8c118713634)
@@ -45,6 +43,7 @@ These variables define the amount and type of data that will be downloaded and u
 
 ### 1. Setting up user defined variables
 
+![image](https://github.com/user-attachments/assets/ee4e906e-602b-4390-b79f-48030efd9623)
 
 ### 2. Creating directory structure
 In the main file, first, directories needed for this project are created.
@@ -68,33 +67,30 @@ Elevation change is computed between each of the ICESat-2 heights and elevation 
 Glaciers within the area of interest (variable 'label') are selected from the Randolph Glacier Inventory (RGI). A geopackage with the clipped RGI is saved in the 'data/' folder. A list of glaciers is stored in a variable, which will then be looped through in the next steps.
 
 ### 7. Create glacier subsets
-Clips the ICESat-2 data and saves a new geopackage for each glacier.
+Clips the ICESat-2 data and saves a new geopackage for each glacier. The subsets are saved in 'temp/glaciers/' with the naming convention 'glacierID_icesat_clipped.gpkg'.
 
 ### 8. Filtering and Normalizing
 Filters the ICESat-2 data from noise (mainly caused by clouds). The filtering is done using the RANSAC algorithm on 2D data where the x-dimension is ICESat-2 height and the y-dimension is elevation from the NPI DEM. This enables us to remove clouds while keeping the points for surges.
 
-The elevation data is normalized (not the elevation change) to 0-1 for each glacier so that the classification result is not affected by some glaciers being higher asl than others.
+The elevation data is normalized (not the elevation change) to 0-1 for each glacier so that the classification result is not affected by some glaciers being higher above sea level than others.
 
 ### 9. Grouping by Hydrological Years
 The last step before the classification is to split the year data by hydrological years. A hydrological year begins on 1.11. and ends on 31.10. The files are stored in 'temp/glaciers/' with a naming convention 'glacierID_year.gpkg' where year 2019 means the hydrological year beginning on 1.11.2018 and ending 31.10.2019.
 
 ### 10. Extract Features and Count Yearly Changes
-Features to describe elevation change trends over the glacier were extracted. Most of them are visualized on the plots below. These features served as input to the Random Forest Classification. Subsequently, the yearly changes were computed on all the features. 
+Features to describe elevation change trends over the glacier were extracted. Most of them are visualized on the plots below (Andrinebreen - stable glacier, Austfonna - surging glacier). These features served as input to the Random Forest Classification. Subsequently, the yearly changes were computed on all the features. 
+
+![statisticalmetricsAndrinebreen2019](https://github.com/user-attachments/assets/d0dad9b3-a7c9-49d9-bfd0-f1bd15752516)
+
+![statisticalmetricsAustfonna, -2020](https://github.com/user-attachments/assets/c51db768-f804-458c-94d0-1867554b0619)
+
+
 
 ### 11. Random Forest Classification
-A Random Forest Classification is computed based on training data from Kääb et al. (2023). The training data can be downloaded in this Github project and should be saved in the 'data' folder. 
-
-
-
+A Random Forest Classification is computed based on training data from Kääb et al. (2023). The training data can be downloaded in this Github project and should be saved in the 'data' folder.
 
 ### 12. Plot Results
 Maps of results are created for each year and saved in the 'results' folder.
 
-## Notes
-
-
-## Detailed project description
-
-
-## Credits
-This project was developed in collaboration with people at the University in Oslo, namely Erik Schytt Mannerfelt and Désirée Treichler.
+## Acknowledgements and Credits
+This project was developed in collaboration with people at the University in Oslo, namely Erik Schytt Mannerfelt and Désirée Treichler. Some parts of the code are taken directly from them (when this is the case, it is directly stated in a comment in the code). This project was created as part of my diploma thesis at the Charles University in Prague.
