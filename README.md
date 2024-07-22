@@ -18,6 +18,8 @@ For downloading the ICESat-2 data it is necessary to have your EARTHDATA usernam
 
 See installation requirements for packages in environment.xml.
 
+The CRS used is EPSG:32633.
+
 ## User defined variables
 There are some user defined variables to be edited before the script is run. 
 
@@ -79,18 +81,18 @@ The last step before the classification is to split the year data by hydrologica
 
 ### 10. Extract Features and Count Yearly Changes
 Features to describe elevation change trends over the glacier were extracted. Most of them are visualized on the plots below (Andrinebreen - stable glacier, Austfonna - surging glacier). These features served as input to the Random Forest Classification. Subsequently, the yearly changes were computed on all the features. 
-
 ![statisticalmetricsAndrinebreen2019](https://github.com/user-attachments/assets/d0dad9b3-a7c9-49d9-bfd0-f1bd15752516)
-
 ![statisticalmetricsAustfonna, -2020](https://github.com/user-attachments/assets/c51db768-f804-458c-94d0-1867554b0619)
 
-
-
 ### 11. Random Forest Classification
-A Random Forest Classification is computed based on training data from Kääb et al. (2023). The training data can be downloaded in this Github project and should be saved in the 'data' folder.
+A Random Forest Classification is computed based on training data from Kääb et al. (2023). The training data can be downloaded in this Github project and should be saved in the 'data' folder. A confusion matrix is computed and saved in the results folder as a .png file.
+![confusionmatrix_RF_svalbard_2024-07-21_bin](https://github.com/user-attachments/assets/7e98a3de-8f98-40f8-a98f-383218682855)
+
+Results of the classification are saved as a geopackage in EPSG:32633. 
 
 ### 12. Plot Results
 Maps of results are created for each year and saved in the 'results' folder.
+
 
 ## Acknowledgements and Credits
 This project was developed in collaboration with people at the University in Oslo, namely Erik Schytt Mannerfelt and Désirée Treichler. Some parts of the code are taken directly from them (when this is the case, it is directly stated in a comment in the code). This project was created as part of my diploma thesis at the Charles University in Prague.
