@@ -88,7 +88,7 @@ A Random Forest Classification is computed based on training data from Kääb et
 
 
 ### 12. Plot Results
-
+Maps of results are created for each year and saved in the 'results' folder.
 
 ## Notes
 
