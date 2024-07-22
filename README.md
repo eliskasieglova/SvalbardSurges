@@ -20,6 +20,18 @@ For downloading the ICESat-2 data it is necessary to have your EARTHDATA usernam
 
 See installation requirements for packages in environment.xml.
 
+## User defined variables
+There are some user defined variables to be edited before the script is run. 
+
+```
+label = 'area'  ## label of the area selected by the user. this will then choose the according spatial extent. values can be 'svalbard' (reccommended), 'heerland', 'heerlandextended' or 'south'
+products = ['product']  ## list of ICESat-2 products to be downloaded. the script is intended for either ['ATL06'] (recommended) or ['ATL08'] or ['ATL06', 'ATL08']
+date_range = ['start_date', 'end_date']  # list of start date and end date in format YYYY-MM-DD. recommended ['2018-11-01', '2023-10-31'].
+```
+
+These variables define the amount and type of data that will be downloaded and used for the classification of surges in Svalbard.
+
+
 # Documentation
 
 ## Structure of files
@@ -32,19 +44,21 @@ See installation requirements for packages in environment.xml.
 - glacier_names.py: dictionary of glacier names to be retrieved based on glacier ID
 - user_vars.py: user variables to be defined by user
 
-## User defined variables
-There are some user defined variables to be edited before the script is run. 
+In the main file, first, directories needed for this project are created.
 
 ```
-label = 'area'  ## label of the area selected by the user. this will then choose the according spatial extent. values can be 'svalbard' (reccommended), 'heerland', 'heerlandextended' or 'south'
-products = ['product']  ## list of ICESat-2 products to be downloaded. the script is intended for either ['ATL06'] (recommended) or ['ATL08'] or ['ATL06', 'ATL08']
-date_range = ['start_date', 'end_date']  # list of start date and end date in format YYYY-MM-DD. recommended ['2018-11-01', '2023-10-31'].
+# create the necessary directories
+management.createDirs()
 ```
 
-These variables define the amount and type of data that will be downloaded and used for the classification of surges in Svalbard.
+![image](https://github.com/user-attachments/assets/acce4c53-b5a6-49db-9822-5627e0f47cb5)
+
+Then, the function for downloading the ICESat-2 data is called. The download is done using the icepyx package and unfortunately the download using icepyx often crashes due to timeout of request. The solution is to either keep trying until the download is successful, or make the amount of data for download smaller - for example download each year separately. This function downloads the data based on the input settings - label, products and date_range.
+
+
 
 ## Notes
-Download using icepyx often crashes due to timeout of request. The solution is to either keep trying until the download is successful, or make the amount of data for download smaller, for example download each year separately.
+
 
 ## Detailed project description
 
