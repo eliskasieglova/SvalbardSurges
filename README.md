@@ -96,6 +96,7 @@ Results of the classification are saved as a geopackage with the attributes glac
 
 ### 12. Plot Results
 Maps of results are created for each year and saved in the 'results' folder.
+![results2019probs1](https://github.com/user-attachments/assets/46568b5c-f6fc-4e9c-8767-a6191a5116e9)
 
 
 ## Acknowledgements and Credits
