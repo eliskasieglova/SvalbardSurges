@@ -20,8 +20,13 @@ See installation requirements for packages in environment.xml.
 
 The CRS used is EPSG:32633.
 
+**Data you have to have downloaded before running this script:**
+- Randolph Glacier Inventory (https://www.glims.org/RGI/)
+- NPI DEMs (https://public.data.npolar.no/kartdata/S0_Terrengmodell/Delmodell/)
+- training data (in this Github repository)
+
 ## User defined variables
-There are some user defined variables to be edited before the script is run. 
+It is necessary to update the user defined variables in the script user_vars.py. Except for the download specifications (below) you have to update your path to where you have the Randolph Glacier Inventory saved.
 
 ```
 label = 'area'  ## label of the area selected by the user. this will then choose the according spatial extent. values can be 'svalbard' (reccommended), 'heerland', 'heerlandextended' or 'south'
