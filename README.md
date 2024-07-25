@@ -14,16 +14,19 @@ pyproj seems to sometimes not work properly from the conda-forge channel, and ma
 conda remove -f pyproj
 pip install pyproj
 ```
-For downloading the ICESat-2 data it is necessary to have your EARTHDATA username and password saved as environmental variables EARTHDATA_USERNAME and EARTHDATA_PASSWORD.
 
 See installation requirements for packages in environment.xml.
 
-The CRS used is EPSG:32633.
+For downloading the ICESat-2 data it is necessary to have your **EARTHDATA username and password** saved as environmental variables EARTHDATA_USERNAME and EARTHDATA_PASSWORD (see documentation of icepyx: https://icepyx.readthedocs.io/en/latest/).
+
+In the 
 
 **Data you have to have downloaded before running this script:**
 - Randolph Glacier Inventory (https://www.glims.org/RGI/)
-- NPI DEMs (https://public.data.npolar.no/kartdata/S0_Terrengmodell/Delmodell/)
+- NPI DEMs (https://public.data.npolar.no/kartdata/S0_Terrengmodell/Delmodell/) saved as a virtual raster.
 - training data (in this Github repository)
+
+**Downloading NPI DEMs:** see the ADSvalbard module of Erik Schytt Mannerfelt (https://github.com/erikmannerfelt/ADSvalbard/blob/main/adsvalbard) script rasters.py function build_npi_mosaic(). Save this mosaic to 
 
 ## User defined variables
 It is necessary to update the user defined variables in the script user_vars.py. Except for the download specifications (below) you have to update your path to where you have the Randolph Glacier Inventory saved.
