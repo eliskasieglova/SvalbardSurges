@@ -1,0 +1,1 @@
+This project has its own repository. The documentation can be found on this link: https://github.com/eliskasieglova/cubifySvalbard.
