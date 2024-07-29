@@ -42,6 +42,9 @@ These variables define the amount and type of data that will be downloaded and u
 # Documentation
 
 ## Structure of files
+
+The folder **cubifySvalbard** contains results and a link to the documentation of a side project where the ICESat-2 elevation changes were rasterized. The folder **data** contains data used as input for running this code (training data). The folder **svalbardsurges** contains scripts for the detection of surges in Svalbard.
+
 - main.py: main file to run
 - management.py: functions for managing data (creating folders, reading shapefiles, data type conversions)
 - preprocessing.py: functions used in preprocessing (filtering, clipping, normalizing)
